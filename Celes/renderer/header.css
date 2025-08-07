@@ -1,0 +1,182 @@
+/* Header Styles */
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 24px;
+    background: var(--secondary-bg);
+    border-bottom: 1px solid var(--tertiary-bg);
+}
+
+.app-title {
+    font-size: 1.2rem;
+    font-weight: 300;
+    color: #ffffff;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+}
+
+.header-controls {
+    display: flex;
+    gap: 16px;
+}
+
+.header-search {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    max-width: 400px;
+    margin: 0 24px;
+}
+
+.search-container {
+    position: relative;
+    width: 100%;
+    display: flex;
+    align-items: center;
+}
+
+.search-input {
+    width: 100%;
+    padding: 12px 40px 12px 40px;
+    background: var(--tertiary-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--primary-text);
+    font-size: 14px;
+    transition: all 0.2s ease;
+}
+
+.search-input:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    background: var(--secondary-bg);
+}
+
+.search-input::placeholder {
+    color: var(--secondary-text);
+}
+
+.search-icon {
+    position: absolute;
+    left: 12px;
+    width: 16px;
+    height: 16px;
+    color: var(--secondary-text);
+    pointer-events: none;
+}
+
+.clear-search-btn {
+    position: absolute;
+    right: 8px;
+    background: none;
+    border: none;
+    color: var(--secondary-text);
+    padding: 4px;
+    border-radius: 4px;
+    cursor: pointer;
+    opacity: 0;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.clear-search-btn:hover {
+    color: var(--primary-text);
+    background: var(--hover-bg);
+}
+
+.clear-search-btn i {
+    width: 14px;
+    height: 14px;
+}
+
+.search-container:hover .clear-search-btn,
+.search-input:focus + .clear-search-btn,
+.clear-search-btn.show {
+    opacity: 1;
+}
+
+/* List Header Styles */
+.list-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 32px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #1a1a1a;
+}
+
+.list-title h2 {
+    font-size: 1.5rem;
+    font-weight: 300;
+    color: #ffffff;
+    margin-bottom: 4px;
+    letter-spacing: 1px;
+}
+
+.song-count {
+    color: #666666;
+    font-size: 0.85rem;
+    font-weight: 300;
+}
+
+.list-controls {
+    display: flex;
+    gap: 16px;
+}
+
+.song-list-header {
+    display: grid;
+    grid-template-columns: 40px 50px 3fr 1.5fr 80px 80px;
+    gap: 16px;
+    padding: 16px 0;
+    font-weight: 300;
+    color: #666666;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    border-bottom: 1px solid #1a1a1a;
+    margin-bottom: 8px;
+}
+
+/* Section Header Styles */
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .header {
+        flex-direction: column;
+        gap: 16px;
+        align-items: stretch;
+    }
+
+    .header-search {
+        margin: 0;
+        max-width: none;
+    }
+
+    .header-controls {
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: center;
+    }
+
+    .header-controls .btn {
+        font-size: 0.8rem;
+        padding: 8px 12px;
+    }
+    
+    .song-list-header,
+    .song-item {
+        grid-template-columns: 30px 40px 2fr 60px 60px;
+        gap: 12px;
+    }
+}

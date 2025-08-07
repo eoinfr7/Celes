@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir:*)",
+      "Bash(npm install)",
+      "Bash(npm uninstall:*)",
+      "Bash(npm install:*)",
+      "Bash(npx:*)",
+      "Bash(npm run pack:*)",
+      "Bash(npm start)",
+      "Bash(timeout 10s npm start)",
+      "Bash(npm audit fix:*)",
+      "Bash(npm run rebuild:*)",
+      "Bash(node:*)",
+      "Bash(rm:*)",
+      "Bash(grep:*)",
+      "Bash(sed:*)",
+      "Bash(find:*)",
+      "WebFetch(domain:open.spotify.com)",
+      "WebFetch(domain:developer.spotify.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:nukeop.gitbook.io)",
+      "WebFetch(domain:docs.nuclearplayer.com)"
+    ],
+    "deny": []
+  }
+}

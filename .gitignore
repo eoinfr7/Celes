@@ -1,0 +1,7 @@
+node_modules/
+Celes/node_modules/
+dist/
+Celes/dist/
+Celes/app/dist/
+*.log
+.DS_Store

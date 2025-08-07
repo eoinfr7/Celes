@@ -1,0 +1,111 @@
+{
+  "name": "celes",
+  "version": "1.0.5",
+  "description": "A celestial-themed desktop music player built with Electron. Features streaming from YouTube and SoundCloud, local music management, and a beautiful midnight-inspired design with stellar aesthetics.",
+  "main": "main.js",
+  "scripts": {
+    "start": "cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron . --development",
+    "dev": "concurrently \"cd app && vite --host\" \"cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron . --development\"",
+    "build": "npm run build:ui && npm run clean-build && electron-builder",
+    "build:ui": "cd app && vite build",
+    "build:win": "npm run clean-build && npm install rimraf && electron-builder --win",
+    "build:mac": "npm run clean-build && npm install rimraf && electron-builder --mac",
+    "build:linux": "npm run clean-build && npm install rimraf && electron-builder --linux",
+    "pack": "electron-builder --dir",
+    "rebuild": "electron-rebuild",
+    "clean-build": "npm run clean && npm install && npm run rebuild",
+    "clean": "rimraf node_modules package-lock.json",
+    "postinstall": "electron-rebuild"
+  },
+  "keywords": [
+    "music",
+    "player",
+    "electron",
+    "cross-platform",
+    "minimal",
+    "wireframe",
+    "local-music",
+    "streaming",
+    "spotify-alternative"
+  ],
+  "author": "eoinfr",
+  "license": "MIT",
+  "dependencies": {
+    "@distube/ytdl-core": "^4.16.12",
+    "@radix-ui/react-slot": "^1.0.2",
+    "chokidar": "^4.0.3",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.453.0",
+    "music-metadata": "^7.14.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "soundcloud-downloader": "^1.0.0",
+    "sqlite3": "^5.1.6",
+    "tailwind-merge": "^2.5.2",
+    "tailwindcss-animate": "^1.0.7",
+    "youtube-search-api": "^2.0.1",
+    "ytdl-core": "^4.11.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.19",
+    "concurrently": "^9.0.1",
+    "cross-env": "^7.0.3",
+    "electron": "^37.2.6",
+    "electron-builder": "^24.6.4",
+    "electron-rebuild": "^3.2.9",
+    "postcss": "^8.4.41",
+    "rimraf": "^5.0.10",
+    "tailwindcss": "^3.4.10",
+    "vite": "^5.4.6"
+  },
+  "build": {
+    "appId": "app.celes.player",
+    "productName": "Celes",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "**/*",
+      "!node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+      "!node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+      "!node_modules/*.d.ts",
+      "!node_modules/.bin",
+      "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
+      "!.editorconfig",
+      "!**/._*",
+      "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
+      "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
+      "!**/{appveyor.yml,.travis.yml,circle.yml}",
+      "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "assets/icon.icns",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}

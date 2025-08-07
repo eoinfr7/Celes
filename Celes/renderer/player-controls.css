@@ -1,0 +1,327 @@
+/* Player Controls Styles */
+
+/* Player Controls */
+.player-controls {
+    display: flex;
+    align-items: center;
+    padding: 20px 32px;
+    background: var(--secondary-bg);
+    border-top: 1px solid var(--tertiary-bg);
+    height: 100px;
+}
+
+.now-playing {
+    display: flex;
+    align-items: center;
+    width: 280px;
+    gap: 16px;
+}
+
+.album-art {
+    width: 60px;
+    height: 60px;
+    border: 1px solid #1a1a1a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+    border-radius: 4px;
+}
+
+.album-art img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+}
+
+.album-placeholder {
+    width: 20px;
+    height: 20px;
+    border: 1px solid #333333;
+    border-radius: 50%;
+    position: relative;
+}
+
+.album-placeholder[style*="background-image"] {
+    width: 100%;
+    height: 100%;
+    border: none;
+    border-radius: 4px;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+.album-placeholder:not([style*="background-image"])::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border: 1px solid #333333;
+    border-radius: 50%;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+.track-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.track-title {
+    font-weight: 300;
+    color: #ffffff;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.95rem;
+}
+
+.track-artist {
+    color: #666666;
+    font-size: 0.85rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 300;
+}
+
+.controls {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    margin: 0 40px;
+}
+
+.control-btn {
+    background: none;
+    border: 1px solid #333333;
+    color: #888888;
+    cursor: pointer;
+    padding: 12px;
+    transition: all 0.2s ease;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.control-btn:hover {
+    border-color: #ffffff;
+    color: #ffffff;
+}
+
+.control-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+.play-btn {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    border: 2px solid #ffffff;
+    color: #ffffff;
+    background: transparent;
+}
+
+.play-btn:hover {
+    background: #ffffff;
+    color: #000000;
+}
+
+.play-btn svg {
+    width: 20px;
+    height: 20px;
+}
+
+.progress-container {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    gap: 16px;
+}
+
+.time {
+    font-variant-numeric: tabular-nums;
+    color: #666666;
+    font-size: 0.8rem;
+    min-width: 40px;
+    font-weight: 300;
+}
+
+.progress-bar-container {
+    flex: 1;
+    position: relative;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    background: none;
+    border: none;
+    outline: none;
+}
+
+.progress-bar-track {
+    width: 100%;
+    height: 3px;
+    background: #1a1a1a;
+    border-radius: 2px;
+    position: relative;
+    overflow: hidden;
+}
+
+.progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #ffffff 0%, #cccccc 100%);
+    border-radius: 2px;
+    width: 0%;
+    transition: width 0.1s ease-out;
+    position: relative;
+}
+
+.progress-bar-fill::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: -10px;
+    width: 20px;
+    height: 100%;
+    background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 50%, transparent 100%);
+    animation: progress-shimmer 2s infinite;
+}
+
+@keyframes progress-shimmer {
+    0% { transform: translateX(-20px); opacity: 0; }
+    50% { opacity: 1; }
+    100% { transform: translateX(20px); opacity: 0; }
+}
+
+.progress-bar-thumb {
+    width: 14px;
+    height: 14px;
+    background: #ffffff;
+    border: none;
+    border-radius: 50%;
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    cursor: pointer;
+    opacity: 0;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 8px rgba(255,255,255,0.2);
+}
+
+.progress-bar-container:hover .progress-bar-thumb {
+    opacity: 1;
+}
+
+.progress-bar-container:hover .progress-bar-track {
+    height: 4px;
+}
+
+.progress-bar-container:hover .progress-bar-fill {
+    background: linear-gradient(90deg, #ffffff 0%, #f0f0f0 100%);
+}
+
+.volume-bar {
+    width: 100%;
+    height: 2px;
+    background: #1a1a1a;
+    border: none;
+    outline: none;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+    border-radius: 1px;
+    transition: all 0.2s ease;
+}
+
+.volume-bar:hover {
+    height: 3px;
+}
+
+.volume-bar::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    background: #ffffff;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 8px rgba(255,255,255,0.2);
+    opacity: 0;
+}
+
+.volume-bar:hover::-webkit-slider-thumb {
+    opacity: 1;
+    transform: scale(1.1);
+}
+
+.volume-bar::-webkit-slider-track {
+    background: linear-gradient(90deg, #ffffff 0%, #1a1a1a 100%);
+    height: 2px;
+    border-radius: 1px;
+}
+
+.volume-container {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 180px;
+}
+
+.volume-percentage {
+    color: var(--secondary-text);
+    font-size: 0.8rem;
+    font-weight: 500;
+    min-width: 35px;
+    text-align: right;
+}
+
+.volume-bar {
+    width: 100px;
+}
+
+/* Control button like styles */
+.control-btn.like-btn.btn-liked {
+    color: #e53e3e;
+    border-color: var(--control-border);
+}
+
+.control-btn.like-btn.btn-liked:hover {
+    color: #c53030;
+    border-color: var(--control-hover-border);
+}
+
+.control-btn.like-btn:not(.btn-liked):hover {
+    color: #e53e3e;
+    border-color: var(--control-hover-border);
+}
+
+.control-btn.like-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.control-btn.like-btn:disabled:hover {
+    color: var(--control-text);
+    border-color: var(--control-border);
+}
+
+/* Lucide Icon Styles for controls */
+.control-btn i {
+    width: 16px;
+    height: 16px;
+    stroke-width: 2;
+}
+
+.play-btn i {
+    width: 18px;
+    height: 18px;
+}

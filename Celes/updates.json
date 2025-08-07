@@ -1,0 +1,86 @@
+{
+  "version": "1.0.5",
+  "releaseDate": "2025-08-02",
+  "downloadUrl": "https://example.com/Celes/Celes-Setup-1.0.5.exe",
+  "size": 87500000,
+  "checksum": "sha256:placeholder_checksum_for_1.0.5",
+  "changelog": {
+    "summary": "Version 1.0.5 Release",
+    "changes": [
+      "Version bump to 1.0.5 for release"
+    ]
+  },
+  "title": "Version 1.0.5 Release",
+  "critical": false,
+  "minimumVersion": "1.0.0",
+  "history": [
+    {
+      "version": "1.0.4",
+      "releaseDate": "2025-08-02",
+      "title": "Modular Architecture & Update Enhancements",
+      "changes": [
+        "NEW: Modular CSS architecture - styles organized into separate files for better maintainability",
+        "NEW: Enhanced auto-update system - now checks for updates every hour instead of daily",
+        "NEW: Separate CSS files for header, sidebar, player controls, and equalizer components",
+        "FIXED: Album art now displays full image instead of cropped thumbnails in player controls",
+        "FIXED: Progress bar styling - removed unwanted border boxes and improved appearance",
+        "FIXED: Equalizer sliders properly sized and positioned to not overlap frequency labels",
+        "IMPROVED: Better code organization with component-specific stylesheets",
+        "IMPROVED: More responsive update checking for faster delivery of new features"
+      ]
+    },
+    {
+      "version": "1.0.3",
+      "releaseDate": "2025-08-02",
+      "title": "Offline Improvements & UI Polish",
+      "changes": [
+        "NEW: Fully offline icon system - no internet required for icons",
+        "NEW: 'Deselect All' option in right-click menu for song selections",
+        "FIXED: Song checkbox behavior - only toggles when directly clicked",
+        "FIXED: Improved maximize button positioning and alignment",
+        "FIXED: Enhanced sidebar spacing between icons and text",
+        "FIXED: Removed redundant 'Play X Songs' option from multi-select context menu",
+        "IMPROVED: Better visual spacing and icon consistency throughout the app",
+        "IMPROVED: Reduced dependency on external CDNs for better offline experience"
+      ]
+    },
+    {
+      "version": "1.0.2",
+      "releaseDate": "2025-08-02",
+      "title": "Enhanced Import & Update System",
+      "changes": [
+        "Import folders as playlists - organize your music by folder structure",
+        "Choose between 'Import to All Songs' or 'Import as Playlist' when adding folders",
+        "Enhanced OTA update system with better error handling and logging",
+        "Fixed startup issues in production builds with improved database fallback",
+        "Added comprehensive error logging for troubleshooting",
+        "Improved version management and display in settings",
+        "Enhanced folder import dialog with clear visual options",
+        "Better performance and stability improvements"
+      ]
+    },
+    {
+      "version": "1.0.1",
+      "releaseDate": "2025-08-02",
+      "title": "Bug Fix Release",
+      "changes": [
+        "Fixed startup issues in production builds",
+        "Added comprehensive error logging",
+        "Improved update system functionality",
+        "Enhanced database fallback handling"
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "releaseDate": "2025-08-01",
+      "title": "Initial Release",
+      "changes": [
+        "Complete music player with playlist management",
+        "Smart playback features and history tracking", 
+        "Custom overlay notifications",
+        "System tray integration",
+        "Basic OTA update system"
+      ]
+    }
+  ]
+}

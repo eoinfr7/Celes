@@ -1,0 +1,926 @@
+const ytdl = require('@distube/ytdl-core');
+const https = require('https');
+const { app } = require('electron');
+const path = require('path');
+const fs = require('fs');
+const { URL } = require('url');
+let scdl;
+try {
+  scdl = require('soundcloud-downloader').default;
+} catch (e) {
+  try { scdl = require('soundcloud-downloader'); } catch (_) { scdl = null; }
+}
+
+class StreamingService {
+  constructor() {
+    this.currentStream = null;
+    this.streamCache = new Map();
+    this.searchCache = new Map();
+    this.cacheDir = path.join(app.getPath('userData'), 'stream-cache');
+    this.rateLimitDelay = 1000; // Start with 1 second delay
+    this.maxRetries = 3;
+    this.requestQueue = [];
+    this.isProcessingQueue = false;
+    
+    // Ensure cache directory exists
+    if (!fs.existsSync(this.cacheDir)) {
+      fs.mkdirSync(this.cacheDir, { recursive: true });
+    }
+    
+    // Supported platforms that pay artists
+    this.supportedPlatforms = {
+      youtube: {
+        name: 'YouTube Music',
+        searchUrl: 'https://www.youtube.com/results',
+        supportsDirectPay: true
+      },
+      soundcloud: {
+        name: 'SoundCloud',
+        searchUrl: 'https://soundcloud.com/search',
+        supportsDirectPay: true
+      },
+      bandcamp: {
+        name: 'Bandcamp',
+        searchUrl: 'https://bandcamp.com/search',
+        supportsDirectPay: true
+      },
+      spotify: {
+        name: 'Spotify',
+        searchUrl: 'https://open.spotify.com/search',
+        supportsDirectPay: true
+      }
+    };
+  }
+
+  async searchMusic(query, platform = 'youtube', limit = 20) {
+    const cacheKey = `${platform}:${query}:${limit}`;
+    
+    // Check cache first
+    if (this.searchCache.has(cacheKey)) {
+      const cached = this.searchCache.get(cacheKey);
+      if (Date.now() - cached.timestamp < 300000) { // 5 minutes cache
+        return cached.results;
+      }
+    }
+
+    try {
+      let results = [];
+      
+      switch (platform) {
+        case 'youtube':
+          results = await this.searchYouTube(query, limit);
+          break;
+        case 'soundcloud':
+          results = await this.searchSoundCloud(query, limit);
+          break;
+        case 'bandcamp':
+          results = await this.searchBandcamp(query, limit);
+          break;
+        case 'spotify':
+          results = await this.searchSpotify(query, limit);
+          break;
+        default:
+          throw new Error(`Unsupported platform: ${platform}`);
+      }
+
+      // Cache results
+      this.searchCache.set(cacheKey, {
+        results,
+        timestamp: Date.now()
+      });
+
+      return results;
+    } catch (error) {
+      console.error(`Error searching ${platform}:`, error);
+      throw error;
+    }
+  }
+
+  async searchYouTube(query, limit = 20) {
+    try {
+      const yts = require('youtube-search-api');
+      const res = await this.queueRequest(() => yts.GetListByKeyword(query, false, Math.min(30, Math.max(10, limit * 2))));
+      const items = (res && res.items) || [];
+      const results = [];
+      for (const it of items) {
+        const vid = it?.id?.videoId || it?.id || it?.videoId || null;
+        if (!vid || typeof vid !== 'string' || vid.length !== 11) continue;
+        const title = it?.title || (it?.snippet && it.snippet.title) || 'YouTube';
+        const author = it?.channelTitle || it?.channelId || 'YouTube';
+        const thumb = it?.thumbnail?.thumbnails?.[0]?.url || it?.thumbnail?.url || (it?.thumbnails?.[0]?.url) || '';
+        results.push({
+          id: vid,
+          title: this.cleanTitle(title),
+          artist: author,
+          duration: 0,
+          thumbnail: thumb,
+          url: `https://www.youtube.com/watch?v=${vid}`,
+          platform: 'youtube',
+          type: 'stream',
+          streamUrl: null,
+          album: 'YouTube Music',
+          year: new Date().getFullYear()
+        });
+        if (results.length >= limit) break;
+      }
+      if (results.length) return results;
+      return this.getMockYouTubeResults(query, limit);
+    } catch (error) {
+      console.error('YouTube search error:', error);
+      return this.getMockYouTubeResults(query, limit);
+    }
+  }
+
+  async processBatchVideos(videoIds) {
+    const results = [];
+    
+    for (const videoId of videoIds) {
+      try {
+        await this.sleep(this.rateLimitDelay / 10); // Small delay between individual requests
+        const videoInfo = await ytdl.getInfo(videoId);
+        const videoDetails = videoInfo.videoDetails;
+        
+        // Skip if video is unavailable or too short/long
+        if (!videoDetails.isLiveContent && 
+            parseInt(videoDetails.lengthSeconds) > 30 && 
+            parseInt(videoDetails.lengthSeconds) < 3600) {
+          
+          results.push({
+            id: videoId,
+            title: this.cleanTitle(videoDetails.title),
+            artist: videoDetails.author.name,
+            duration: parseInt(videoDetails.lengthSeconds),
+            thumbnail: this.getBestThumbnail(videoDetails.thumbnails),
+            url: `https://www.youtube.com/watch?v=${videoId}`,
+            platform: 'youtube',
+            type: 'stream',
+            streamUrl: null,
+            album: 'YouTube Music',
+            year: this.extractYear(videoDetails.publishDate) || new Date().getFullYear(),
+            viewCount: parseInt(videoDetails.viewCount) || 0
+          });
+        }
+      } catch (error) {
+        console.error(`Error getting info for video ${videoId}:`, error.message);
+        continue;
+      }
+    }
+    
+    return results;
+  }
+
+  extractVideoIds(html, limit) {
+    // Multiple regex patterns to catch different YouTube response formats
+    const patterns = [
+      /"videoId":"([a-zA-Z0-9_-]{11})"/g,
+      /\/watch\?v=([a-zA-Z0-9_-]{11})/g,
+      /"videoRenderer":{"videoId":"([a-zA-Z0-9_-]{11})"/g
+    ];
+    
+    const videoIds = new Set();
+    
+    for (const pattern of patterns) {
+      const matches = [...html.matchAll(pattern)];
+      matches.forEach(match => videoIds.add(match[1]));
+      
+      if (videoIds.size >= limit * 2) break; // Get more than needed to filter later
+    }
+    
+    return [...videoIds].slice(0, limit * 2); // Return extra to account for filtering
+  }
+
+  cleanTitle(title) {
+    // Remove common music video suffixes and clean up title
+    return title
+      .replace(/\(Official Music Video\)/gi, '')
+      .replace(/\(Official Video\)/gi, '')
+      .replace(/\(Official Audio\)/gi, '')
+      .replace(/\(Lyric Video\)/gi, '')
+      .replace(/\[Official Video\]/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  getBestThumbnail(thumbnails) {
+    if (!thumbnails || thumbnails.length === 0) return '';
+    
+    // Prefer higher quality thumbnails
+    const preferred = thumbnails.find(t => t.width >= 480) || 
+                     thumbnails.find(t => t.width >= 320) || 
+                     thumbnails[0];
+    
+    return preferred.url;
+  }
+
+  extractYear(publishDate) {
+    if (!publishDate) return null;
+    const year = new Date(publishDate).getFullYear();
+    return isNaN(year) ? null : year;
+  }
+
+  async makeHttpRequest(url) {
+    return new Promise((resolve, reject) => {
+      const options = {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        },
+        timeout: 10000
+      };
+      
+      https.get(url, options, (res) => {
+        let data = '';
+        
+        res.on('data', (chunk) => {
+          data += chunk;
+        });
+        
+        res.on('end', () => {
+          if (res.statusCode === 200) {
+            resolve(data);
+          } else if (res.statusCode === 429) {
+            reject(new Error('Rate limited by YouTube'));
+          } else {
+            reject(new Error(`HTTP ${res.statusCode}: ${res.statusMessage}`));
+          }
+        });
+      }).on('error', (err) => {
+        reject(err);
+      }).on('timeout', () => {
+        reject(new Error('Request timeout'));
+      });
+    });
+  }
+
+  async queueRequest(requestFn) {
+    return new Promise((resolve, reject) => {
+      this.requestQueue.push({ requestFn, resolve, reject });
+      this.processQueue();
+    });
+  }
+
+  async processQueue() {
+    if (this.isProcessingQueue || this.requestQueue.length === 0) return;
+    
+    this.isProcessingQueue = true;
+    
+    while (this.requestQueue.length > 0) {
+      const { requestFn, resolve, reject } = this.requestQueue.shift();
+      
+      try {
+        const result = await requestFn();
+        resolve(result);
+      } catch (error) {
+        reject(error);
+      }
+      
+      // Delay between requests to avoid rate limiting
+      await this.sleep(this.rateLimitDelay);
+    }
+    
+    this.isProcessingQueue = false;
+  }
+
+  async sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  getMockYouTubeResults(query, limit = 20) {
+    // Return mock data for demonstration
+    const mockResults = [
+      {
+        id: 'dQw4w9WgXcQ',
+        title: 'Rick Astley - Never Gonna Give You Up',
+        artist: 'Rick Astley',
+        duration: 212,
+        thumbnail: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/default.jpg',
+        url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+        platform: 'youtube',
+        type: 'stream',
+        streamUrl: null,
+        album: 'YouTube Music',
+        year: 1987
+      },
+      {
+        id: '9bZkp7q19f0',
+        title: 'PSY - GANGNAM STYLE',
+        artist: 'PSY',
+        duration: 252,
+        thumbnail: 'https://i.ytimg.com/vi/9bZkp7q19f0/default.jpg',
+        url: 'https://www.youtube.com/watch?v=9bZkp7q19f0',
+        platform: 'youtube',
+        type: 'stream',
+        streamUrl: null,
+        album: 'YouTube Music',
+        year: 2012
+      },
+      {
+        id: 'kJQP7kiw5Fk',
+        title: 'Luis Fonsi - Despacito ft. Daddy Yankee',
+        artist: 'Luis Fonsi',
+        duration: 280,
+        thumbnail: 'https://i.ytimg.com/vi/kJQP7kiw5Fk/default.jpg',
+        url: 'https://www.youtube.com/watch?v=kJQP7kiw5Fk',
+        platform: 'youtube',
+        type: 'stream',
+        streamUrl: null,
+        album: 'YouTube Music',
+        year: 2017
+      }
+    ];
+    
+    return mockResults.slice(0, limit);
+  }
+
+  async searchSoundCloud(query, limit = 20) {
+    try {
+      // Basic web search via SoundCloud site + hydration parse
+      return await this.performSoundCloudSearchWithRetry(query, limit);
+    } catch (error) {
+      console.error('SoundCloud search error:', error);
+      // Try a simpler approach: if query looks like a permalink, wrap it
+      const permalinkLike = query.startsWith('http') && query.includes('soundcloud.com');
+      if (permalinkLike) {
+        return [{
+          id: `sc_${Date.now()}`,
+          title: query.split('/').slice(-1)[0].replace(/[-_]/g, ' '),
+          artist: 'SoundCloud',
+          duration: 0,
+          thumbnail: '',
+          url: query,
+          platform: 'soundcloud',
+          type: 'stream',
+          streamUrl: null,
+          album: 'SoundCloud',
+          year: new Date().getFullYear()
+        }];
+      }
+      // fallback to empty to allow outer fallback to IA
+      return [];
+    }
+  }
+
+  async performSoundCloudSearchWithRetry(query, limit, retries = 0) {
+    try {
+      return await this.queueRequest(async () => {
+        // Use SoundCloud's search endpoint
+        const searchUrl = `https://soundcloud.com/search/sounds?q=${encodeURIComponent(query)}`;
+        const response = await this.makeHttpRequest(searchUrl);
+        
+        // Extract track data from the HTML response
+        const tracks = this.extractSoundCloudTracks(response, limit);
+        
+        if (tracks.length === 0) {
+          throw new Error('No SoundCloud tracks found in search results');
+        }
+        
+        const results = [];
+        const batchSize = 3; // Smaller batches for SoundCloud
+        
+        for (let i = 0; i < Math.min(tracks.length, limit); i += batchSize) {
+          const batch = tracks.slice(i, i + batchSize);
+          const batchResults = await this.processSoundCloudBatch(batch);
+          results.push(...batchResults);
+          
+          if (i + batchSize < tracks.length) {
+            await this.sleep(this.rateLimitDelay);
+          }
+        }
+        
+        return results.slice(0, limit);
+      });
+    } catch (error) {
+      if (retries < this.maxRetries) {
+        console.log(`Retrying SoundCloud search (attempt ${retries + 1}/${this.maxRetries})`);
+        await this.sleep(this.rateLimitDelay * Math.pow(2, retries));
+        return this.performSoundCloudSearchWithRetry(query, limit, retries + 1);
+      }
+      throw error;
+    }
+  }
+
+  extractSoundCloudTracks(html, limit) {
+    const tracks = [];
+    
+    try {
+      // Look for JSON data in the page
+      const jsonDataRegex = /<script>window\.__sc_hydration\s*=\s*(\[.*?\]);<\/script>/s;
+      const match = html.match(jsonDataRegex);
+      
+      if (match) {
+        const hydrationData = JSON.parse(match[1]);
+        
+        // Find tracks in the hydration data
+        const findTracks = (obj) => {
+          if (Array.isArray(obj)) {
+            obj.forEach(findTracks);
+          } else if (obj && typeof obj === 'object') {
+            if (obj.kind === 'track' && obj.permalink_url && obj.title) {
+              tracks.push({
+                id: obj.id.toString(),
+                title: obj.title,
+                artist: obj.user?.username || 'Unknown Artist',
+                duration: Math.floor(obj.duration / 1000) || 0,
+                thumbnail: obj.artwork_url || obj.user?.avatar_url || '',
+                url: obj.permalink_url,
+                platform: 'soundcloud',
+                type: 'stream',
+                streamUrl: null,
+                album: 'SoundCloud',
+                year: obj.created_at ? new Date(obj.created_at).getFullYear() : new Date().getFullYear(),
+                playCount: obj.playback_count || 0,
+                likes: obj.likes_count || 0
+              });
+            }
+            
+            Object.values(obj).forEach(findTracks);
+          }
+        };
+        
+        findTracks(hydrationData);
+      }
+    } catch (error) {
+      console.error('Error parsing SoundCloud hydration data:', error);
+    }
+    
+    // Fallback: try to extract tracks from HTML patterns
+    if (tracks.length === 0) {
+      const trackPatterns = [
+        /"permalink_url":"([^"]+)"/g,
+        /"title":"([^"]+)"/g,
+        /"username":"([^"]+)"/g
+      ];
+      
+      // Basic pattern-based extraction (less reliable)
+      const urlMatches = [...html.matchAll(trackPatterns[0])];
+      const titleMatches = [...html.matchAll(trackPatterns[1])];
+      const usernameMatches = [...html.matchAll(trackPatterns[2])];
+      
+      for (let i = 0; i < Math.min(urlMatches.length, titleMatches.length, usernameMatches.length, limit); i++) {
+        if (urlMatches[i] && titleMatches[i] && usernameMatches[i]) {
+          tracks.push({
+            id: `sc_${Date.now()}_${i}`,
+            title: titleMatches[i][1],
+            artist: usernameMatches[i][1],
+            duration: 180, // Default duration
+            thumbnail: '',
+            url: urlMatches[i][1],
+            platform: 'soundcloud',
+            type: 'stream',
+            streamUrl: null,
+            album: 'SoundCloud',
+            year: new Date().getFullYear()
+          });
+        }
+      }
+    }
+    
+    return tracks.slice(0, limit);
+  }
+
+  async processSoundCloudBatch(tracks) {
+    const results = [];
+    
+    for (const track of tracks) {
+      try {
+        await this.sleep(this.rateLimitDelay / 5);
+        
+        // Validate and enhance track data
+        if (track.url && track.title) {
+          // Try to get more detailed info if possible
+          const enhancedTrack = await this.enhanceSoundCloudTrack(track);
+          results.push(enhancedTrack);
+        }
+      } catch (error) {
+        console.error(`Error processing SoundCloud track ${track.id}:`, error.message);
+        // Add the basic track data even if enhancement fails
+        results.push(track);
+      }
+    }
+    
+    return results;
+  }
+
+  async enhanceSoundCloudTrack(track) {
+    try {
+      // Try to get additional track info from SoundCloud
+      if (scdl && scdl.getInfo) {
+        const info = await scdl.getInfo(track.url);
+        return {
+          ...track,
+          title: info.title || track.title,
+          artist: info.user?.username || track.artist,
+          duration: Math.floor((info.duration || track.duration * 1000) / 1000),
+          thumbnail: info.artwork_url || track.thumbnail,
+          description: info.description,
+          genre: info.genre,
+          playCount: info.playback_count || track.playCount,
+          likes: info.likes_count || track.likes
+        };
+      }
+    } catch (error) {
+      console.error('Error enhancing SoundCloud track:', error.message);
+    }
+    
+    return track;
+  }
+
+  getMockSoundCloudResults(query, limit = 20) {
+    const mockResults = [
+      {
+        id: 'sc_mock_1',
+        title: 'Chill Lo-Fi Beats',
+        artist: 'LoFi Producer',
+        duration: 195,
+        thumbnail: 'https://via.placeholder.com/300x200/ff7700/ffffff?text=SoundCloud+1',
+        url: 'https://soundcloud.com/user/chill-lofi-beats',
+        platform: 'soundcloud',
+        type: 'stream',
+        streamUrl: null,
+        album: 'SoundCloud',
+        year: 2024,
+        playCount: 15420,
+        likes: 892
+      },
+      {
+        id: 'sc_mock_2',
+        title: 'Deep House Vibes',
+        artist: 'Electronic Artist',
+        duration: 312,
+        thumbnail: 'https://via.placeholder.com/300x200/ff7700/ffffff?text=SoundCloud+2',
+        url: 'https://soundcloud.com/user/deep-house-vibes',
+        platform: 'soundcloud',
+        type: 'stream',
+        streamUrl: null,
+        album: 'SoundCloud',
+        year: 2024,
+        playCount: 8930,
+        likes: 445
+      },
+      {
+        id: 'sc_mock_3',
+        title: 'Indie Folk Acoustic',
+        artist: 'Folk Musician',
+        duration: 248,
+        thumbnail: 'https://via.placeholder.com/300x200/ff7700/ffffff?text=SoundCloud+3',
+        url: 'https://soundcloud.com/user/indie-folk-acoustic',
+        platform: 'soundcloud',
+        type: 'stream',
+        streamUrl: null,
+        album: 'SoundCloud',
+        year: 2024,
+        playCount: 5672,
+        likes: 234
+      }
+    ];
+    
+    return mockResults.slice(0, limit);
+  }
+
+  async searchBandcamp(query, limit = 20) {
+    try {
+      // For now, return mock data - would need Bandcamp API integration
+      return [];
+    } catch (error) {
+      console.error('Bandcamp search error:', error);
+      throw error;
+    }
+  }
+
+  async searchSpotify(query, limit = 20) {
+    try {
+      // For now, return mock data - would need Spotify API integration
+      return [];
+    } catch (error) {
+      console.error('Spotify search error:', error);
+      throw error;
+    }
+  }
+
+  async getStreamUrl(trackId, platform = 'youtube') {
+    const cacheKey = `${platform}:${trackId}`;
+    
+    // Check cache first
+    if (this.streamCache.has(cacheKey)) {
+      const cached = this.streamCache.get(cacheKey);
+      if (Date.now() - cached.timestamp < 3600000) { // 1 hour cache
+        return cached.streamUrl;
+      }
+    }
+
+    try {
+      let streamUrl = null;
+      
+      switch (platform) {
+        case 'youtube':
+          streamUrl = await this.getYouTubeStreamUrl(trackId);
+          break;
+        case 'soundcloud':
+          streamUrl = await this.getSoundCloudStreamUrl(trackId);
+          break;
+        default:
+          throw new Error(`Unsupported platform: ${platform}`);
+      }
+
+      if (streamUrl) {
+        // Cache the stream URL
+        this.streamCache.set(cacheKey, {
+          streamUrl,
+          timestamp: Date.now()
+        });
+      }
+
+      return streamUrl;
+    } catch (error) {
+      console.error(`Error getting stream URL for ${platform}:`, error);
+      throw error;
+    }
+  }
+
+  async getYouTubeStreamUrl(videoId) {
+    try {
+      // Add to request queue to prevent rate limiting
+      return await this.queueRequest(async () => {
+        const info = await ytdl.getInfo(`https://www.youtube.com/watch?v=${videoId}`);
+        
+        if (!info.formats || info.formats.length === 0) {
+          throw new Error('No formats available for this video');
+        }
+        
+        // Filter for audio-only formats
+        let audioFormats = (info.formats || []).filter(f => f.hasAudio && !f.hasVideo);
+        
+        // If no audio-only formats, try video formats with audio
+        if (audioFormats.length === 0) {
+          audioFormats = (info.formats || []).filter(format => format.hasAudio);
+        }
+        
+        if (audioFormats.length === 0) {
+          throw new Error('No audio formats available for this video');
+        }
+        
+        // Sort by quality and prefer formats with known codecs
+        audioFormats.sort((a, b) => {
+          // Prefer opus codec, then aac, then others
+          const codecPriority = { 'opus': 3, 'aac': 2, 'mp4a': 1 };
+          const aCodecScore = codecPriority[a.audioCodec] || 0;
+          const bCodecScore = codecPriority[b.audioCodec] || 0;
+          
+          if (aCodecScore !== bCodecScore) {
+            return bCodecScore - aCodecScore;
+          }
+          
+          // Then by bitrate
+          return (b.audioBitrate || 0) - (a.audioBitrate || 0);
+        });
+        
+        const bestFormat = audioFormats[0];
+        
+        // Validate URL before returning
+        if (!bestFormat.url) {
+          throw new Error('No valid stream URL found');
+        }
+        
+        console.log(`Selected format: ${bestFormat.audioCodec} @ ${bestFormat.audioBitrate || 'unknown'}kbps`);
+        return bestFormat.url;
+      });
+    } catch (error) {
+      console.error(`YouTube stream URL error for ${videoId}:`, error.message);
+      
+      // Handle specific error cases
+      if (error.message.includes('Video unavailable')) {
+        throw new Error('This video is not available for streaming');
+      } else if (error.message.includes('429')) {
+        // Rate limited - increase delay
+        this.rateLimitDelay = Math.min(this.rateLimitDelay * 2, 10000);
+        throw new Error('Service temporarily unavailable due to rate limiting');
+      } else if (error.message.includes('private')) {
+        throw new Error('This video is private and cannot be streamed');
+      }
+      
+      throw error;
+    }
+  }
+
+  async getTrackInfo(trackId, platform = 'youtube') {
+    try {
+      switch (platform) {
+        case 'youtube':
+          return await this.getYouTubeTrackInfo(trackId);
+        case 'soundcloud':
+          return await this.getSoundCloudTrackInfo(trackId);
+        default:
+          throw new Error(`Unsupported platform: ${platform}`);
+      }
+    } catch (error) {
+      console.error(`Error getting track info for ${platform}:`, error);
+      throw error;
+    }
+  }
+
+  async getYouTubeTrackInfo(videoId) {
+    try {
+      const info = await ytdl.getInfo(videoId);
+      
+      return {
+        id: videoId,
+        title: info.videoDetails.title,
+        artist: info.videoDetails.author.name,
+        duration: parseInt(info.videoDetails.lengthSeconds),
+        thumbnail: info.videoDetails.thumbnails[0]?.url,
+        url: `https://www.youtube.com/watch?v=${videoId}`,
+        platform: 'youtube',
+        type: 'stream',
+        album: 'YouTube Music',
+        year: new Date().getFullYear(),
+        description: info.videoDetails.description,
+        viewCount: info.videoDetails.viewCount
+      };
+    } catch (error) {
+      console.error('YouTube track info error:', error);
+      throw error;
+    }
+  }
+
+  async getReleaseRadar(limit = 20) {
+    try {
+      // Simulate release radar with trending music
+      const trendingQueries = [
+        'new music 2024',
+        'latest releases',
+        'trending songs',
+        'popular music',
+        'hot tracks'
+      ];
+      
+      const randomQuery = trendingQueries[Math.floor(Math.random() * trendingQueries.length)];
+      const results = await this.searchMusic(randomQuery, 'youtube', limit);
+      
+      return results.map(track => ({
+        ...track,
+        radarType: 'trending',
+        addedDate: new Date().toISOString()
+      }));
+    } catch (error) {
+      console.error('Error getting release radar:', error);
+      return [];
+    }
+  }
+
+  async getArtistTracks(artistName, limit = 20) {
+    try {
+      const results = await this.searchMusic(artistName, 'youtube', limit);
+      
+      return results.filter(track => 
+        track.artist.toLowerCase().includes(artistName.toLowerCase())
+      );
+    } catch (error) {
+      console.error('Error getting artist tracks:', error);
+      return [];
+    }
+  }
+
+  async getSimilarTracks(trackId, platform = 'youtube', limit = 10) {
+    try {
+      const trackInfo = await this.getTrackInfo(trackId, platform);
+      const query = `${trackInfo.artist} ${trackInfo.title} similar`;
+      const results = await this.searchMusic(query, platform, limit);
+      
+      return results.filter(track => track.id !== trackId);
+    } catch (error) {
+      console.error('Error getting similar tracks:', error);
+      return [];
+    }
+  }
+
+  async followArtist(artistName) {
+    try {
+      // Store followed artists in database or local storage
+      const followedArtists = this.getFollowedArtists();
+      if (!followedArtists.includes(artistName)) {
+        followedArtists.push(artistName);
+        this.saveFollowedArtists(followedArtists);
+      }
+      
+      return { success: true, artistName };
+    } catch (error) {
+      console.error('Error following artist:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async unfollowArtist(artistName) {
+    try {
+      const followedArtists = this.getFollowedArtists();
+      const updatedArtists = followedArtists.filter(artist => artist !== artistName);
+      this.saveFollowedArtists(updatedArtists);
+      
+      return { success: true, artistName };
+    } catch (error) {
+      console.error('Error unfollowing artist:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  getFollowedArtists() {
+    try {
+      const filePath = path.join(app.getPath('userData'), 'followed-artists.json');
+      if (fs.existsSync(filePath)) {
+        const data = fs.readFileSync(filePath, 'utf8');
+        return JSON.parse(data);
+      }
+      return [];
+    } catch (error) {
+      console.error('Error getting followed artists:', error);
+      return [];
+    }
+  }
+
+  saveFollowedArtists(artists) {
+    try {
+      const filePath = path.join(app.getPath('userData'), 'followed-artists.json');
+      fs.writeFileSync(filePath, JSON.stringify(artists, null, 2));
+    } catch (error) {
+      console.error('Error saving followed artists:', error);
+    }
+  }
+
+  async getFollowedArtistsTracks(limit = 50) {
+    try {
+      const followedArtists = this.getFollowedArtists();
+      const allTracks = [];
+      
+      for (const artist of followedArtists) {
+        const tracks = await this.getArtistTracks(artist, Math.ceil(limit / followedArtists.length));
+        allTracks.push(...tracks);
+      }
+      
+      return allTracks.slice(0, limit);
+    } catch (error) {
+      console.error('Error getting followed artists tracks:', error);
+      return [];
+    }
+  }
+
+  clearCache() {
+    try {
+      this.streamCache.clear();
+      this.searchCache.clear();
+      
+      // Clear cache files
+      if (fs.existsSync(this.cacheDir)) {
+        const files = fs.readdirSync(this.cacheDir);
+        for (const file of files) {
+          const filePath = path.join(this.cacheDir, file);
+          if (fs.statSync(filePath).isFile()) {
+            fs.unlinkSync(filePath);
+          }
+        }
+      }
+      
+      // Reset rate limiting
+      this.rateLimitDelay = 1000;
+      
+      return { success: true };
+    } catch (error) {
+      console.error('Error clearing cache:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Health check method to test YouTube connectivity
+  async healthCheck() {
+    try {
+      const testResults = await this.searchYouTube('test music', 1);
+      if (testResults.length > 0) {
+        const testVideoId = testResults[0].id;
+        await this.getYouTubeStreamUrl(testVideoId);
+        return { healthy: true, message: 'YouTube streaming is working' };
+      } else {
+        return { healthy: false, message: 'YouTube search returned no results' };
+      }
+    } catch (error) {
+      return { healthy: false, message: `YouTube streaming error: ${error.message}` };
+    }
+  }
+
+  // Get streaming statistics
+  getStats() {
+    return {
+      streamCacheSize: this.streamCache.size,
+      searchCacheSize: this.searchCache.size,
+      currentRateLimit: this.rateLimitDelay,
+      queueLength: this.requestQueue.length,
+      isProcessingQueue: this.isProcessingQueue
+    };
+  }
+
+  getSupportedPlatforms() {
+    return this.supportedPlatforms;
+  }
+
+  isPlatformSupported(platform) {
+    return platform in this.supportedPlatforms;
+  }
+}
+
+module.exports = StreamingService; 

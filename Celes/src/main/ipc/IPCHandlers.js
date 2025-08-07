@@ -1,0 +1,551 @@
+const { ipcMain, dialog, Notification, app } = require('electron');
+
+class IPCHandlers {
+  constructor(database, folderWatcher, mainWindow, trayService, overlayService, updateService, streamingService) {
+    this.database = database;
+    this.folderWatcher = folderWatcher;
+    this.mainWindow = mainWindow;
+    this.trayService = trayService;
+    this.overlayService = overlayService;
+    this.updateService = updateService;
+    this.streamingService = streamingService;
+  }
+
+  setupHandlers() {
+    this.setupDatabaseHandlers();
+    this.setupDialogHandlers();
+    this.setupFolderHandlers();
+    this.setupTrayHandlers();
+    this.setupWindowHandlers();
+    this.setupMediaHandlers();
+    this.setupNotificationHandlers();
+    this.setupUpdateHandlers();
+    this.setupStreamingHandlers();
+  }
+
+  setupDatabaseHandlers() {
+    ipcMain.handle('get-all-songs', async () => {
+      return this.database.getAllSongs();
+    });
+
+    ipcMain.handle('get-local-songs', async () => {
+      return this.database.getLocalSongs();
+    });
+
+    ipcMain.handle('get-streaming-songs', async () => {
+      return this.database.getStreamingSongs();
+    });
+
+    ipcMain.handle('add-song', async (event, songData) => {
+      return this.database.addSong(songData);
+    });
+
+    ipcMain.handle('add-streaming-track', async (event, trackData) => {
+      return this.database.addStreamingTrack(trackData);
+    });
+
+    ipcMain.handle('delete-song', async (event, songId) => {
+      return this.database.deleteSong(songId);
+    });
+
+    ipcMain.handle('get-playlists', async () => {
+      return this.database.getPlaylists();
+    });
+
+    ipcMain.handle('create-playlist', async (event, name) => {
+      return this.database.createPlaylist(name);
+    });
+
+    ipcMain.handle('add-song-to-playlist', async (event, playlistId, songId) => {
+      return this.database.addSongToPlaylist(playlistId, songId);
+    });
+
+    ipcMain.handle('get-album-art', async (event, songId) => {
+      return this.database.getAlbumArt(songId);
+    });
+
+    ipcMain.handle('toggle-like-song', async (event, songId) => {
+      return this.database.toggleLikeSong(songId);
+    });
+
+    ipcMain.handle('get-liked-songs', async () => {
+      return this.database.getLikedSongs();
+    });
+
+    ipcMain.handle('delete-playlist', async (event, playlistId) => {
+      return this.database.deletePlaylist(playlistId);
+    });
+
+    ipcMain.handle('rename-playlist', async (event, playlistId, newName) => {
+      return this.database.renamePlaylist(playlistId, newName);
+    });
+
+    // Artist following handlers
+    ipcMain.handle('follow-artist', async (event, artistName, platform) => {
+      return this.database.followArtist(artistName, platform);
+    });
+
+    ipcMain.handle('unfollow-artist', async (event, artistName) => {
+      return this.database.unfollowArtist(artistName);
+    });
+
+    ipcMain.handle('get-followed-artists', async () => {
+      return this.database.getFollowedArtists();
+    });
+
+    ipcMain.handle('is-artist-followed', async (event, artistName) => {
+      return this.database.isArtistFollowed(artistName);
+    });
+  }
+
+  setupDialogHandlers() {
+    ipcMain.handle('show-open-dialog', async () => {
+      const result = await dialog.showOpenDialog(this.mainWindow, {
+        properties: ['openFile', 'multiSelections'],
+        filters: [
+          { name: 'Audio Files', extensions: ['mp3', 'flac', 'wav', 'm4a', 'aac', 'ogg'] }
+        ]
+      });
+      return result;
+    });
+
+    ipcMain.handle('show-folder-dialog', async () => {
+      const result = await dialog.showOpenDialog(this.mainWindow, {
+        properties: ['openDirectory']
+      });
+      return result;
+    });
+  }
+
+  setupFolderHandlers() {
+    ipcMain.handle('add-watched-folder', async (event, folderPath) => {
+      return this.folderWatcher.addWatchedFolder(folderPath);
+    });
+
+    ipcMain.handle('remove-watched-folder', async (event, folderPath) => {
+      return this.folderWatcher.removeWatchedFolder(folderPath);
+    });
+
+    ipcMain.handle('get-watched-folders', async () => {
+      return this.folderWatcher.getWatchedFolders();
+    });
+
+    ipcMain.handle('scan-folder', async (event, folderPath) => {
+      return this.folderWatcher.scanFolder(folderPath);
+    });
+
+    ipcMain.handle('get-folder-watcher-status', async () => {
+      return this.folderWatcher.getQueueStatus();
+    });
+  }
+
+  setupTrayHandlers() {
+    ipcMain.handle('update-minimize-to-tray', async (event, enabled) => {
+      this.trayService.updateMinimizeToTrayEnabled(enabled);
+      return { success: true };
+    });
+
+    ipcMain.on('open-settings', () => {
+      // This is handled by the tray service to open settings from tray menu
+      this.mainWindow.webContents.send('open-settings-modal');
+    });
+  }
+
+  setupWindowHandlers() {
+    ipcMain.handle('window-minimize', () => {
+      this.mainWindow.minimize();
+    });
+
+    ipcMain.handle('window-maximize', () => {
+      if (this.mainWindow.isMaximized()) {
+        this.mainWindow.unmaximize();
+      } else {
+        this.mainWindow.maximize();
+      }
+      return this.mainWindow.isMaximized();
+    });
+
+    ipcMain.handle('window-close', () => {
+      this.mainWindow.close();
+    });
+
+    ipcMain.handle('window-is-maximized', () => {
+      return this.mainWindow.isMaximized();
+    });
+  }
+
+  setupMediaHandlers() {
+    // Set up global media key listeners
+    ipcMain.on('register-media-keys', () => {
+      this.mainWindow.webContents.setWindowOpenHandler = null; // Clear any existing handlers
+      
+      // Register global shortcuts for media keys
+      const { globalShortcut } = require('electron');
+      
+      // Clear existing shortcuts
+      globalShortcut.unregisterAll();
+      
+      // Register media key shortcuts
+      globalShortcut.register('MediaPlayPause', () => {
+        this.mainWindow.webContents.send('media-key-play-pause');
+      });
+      
+      globalShortcut.register('MediaNextTrack', () => {
+        this.mainWindow.webContents.send('media-key-next');
+      });
+      
+      globalShortcut.register('MediaPreviousTrack', () => {
+        this.mainWindow.webContents.send('media-key-previous');
+      });
+      
+      console.log('Media keys registered');
+    });
+
+    ipcMain.on('unregister-media-keys', () => {
+      const { globalShortcut } = require('electron');
+      globalShortcut.unregisterAll();
+      console.log('Media keys unregistered');
+    });
+  }
+
+  setupNotificationHandlers() {
+    ipcMain.handle('show-overlay-notification', async (event, songData) => {
+      try {
+        // Show overlay if main window is not focused, minimized, or not visible
+        if (!this.mainWindow.isFocused() || this.mainWindow.isMinimized() || !this.mainWindow.isVisible()) {
+          await this.overlayService.showSongNotification(songData);
+        }
+        return { success: true };
+      } catch (error) {
+        console.error('Error showing overlay notification:', error);
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle('hide-overlay-notification', async () => {
+      try {
+        this.overlayService.hideOverlay();
+        return { success: true };
+      } catch (error) {
+        console.error('Error hiding overlay notification:', error);
+        return { success: false, error: error.message };
+      }
+    });
+
+    // Track recently played songs
+    ipcMain.handle('track-song-play', async (event, songId) => {
+      try {
+        // Add to recently played table
+        this.database.addToRecentlyPlayed(songId);
+        return { success: true };
+      } catch (error) {
+        console.error('Error tracking song play:', error);
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle('get-recently-played', async () => {
+      try {
+        return this.database.getRecentlyPlayed();
+      } catch (error) {
+        console.error('Error getting recently played:', error);
+        return [];
+      }
+    });
+
+    ipcMain.handle('get-smart-playlists', async () => {
+      try {
+        return {
+          recentlyAdded: this.database.getRecentlyAdded(),
+          mostPlayed: this.database.getMostPlayed()
+        };
+      } catch (error) {
+        console.error('Error getting smart playlists:', error);
+        return { recentlyAdded: [], mostPlayed: [] };
+      }
+    });
+  }
+
+  setupUpdateHandlers() {
+    ipcMain.handle('get-app-version', () => {
+      return { version: app.getVersion() };
+    });
+    
+    ipcMain.handle('check-for-updates', async () => {
+      try {
+        await this.updateService.checkForUpdates(false);
+        return { success: true };
+      } catch (error) {
+        console.error('Error checking for updates:', error);
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle('handle-update-decision', async (event, decision, updateInfo) => {
+      try {
+        await this.updateService.handleUpdateDecision(decision, updateInfo);
+        return { success: true };
+      } catch (error) {
+        console.error('Error handling update decision:', error);
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle('request-update-history', async () => {
+      try {
+        await this.updateService.showUpdateHistory();
+        return { success: true };
+      } catch (error) {
+        console.error('Error requesting update history:', error);
+        return { success: false, error: error.message };
+      }
+    });
+  }
+
+  setupStreamingHandlers() {
+    // Search functionality
+    ipcMain.handle('search-music', async (event, query, platform, limit) => {
+      try {
+        return await this.streamingService.searchMusic(query, platform, limit);
+      } catch (error) {
+        console.error('Error searching music:', error);
+        return [];
+      }
+    });
+
+    // Enhanced search with fallback
+    ipcMain.handle('search-music-with-fallback', async (event, query, primaryPlatform, limit) => {
+      try {
+        return await this.streamingService.searchMusicWithFallback(query, primaryPlatform, limit);
+      } catch (error) {
+        console.error('Error searching music with fallback:', error);
+        return [];
+      }
+    });
+
+    ipcMain.handle('get-release-radar', async (event, limit) => {
+      try {
+        return await this.streamingService.getReleaseRadar(limit);
+      } catch (error) {
+        console.error('Error getting release radar:', error);
+        return [];
+      }
+    });
+
+    ipcMain.handle('get-artist-tracks', async (event, artistName, limit) => {
+      try {
+        return await this.streamingService.getArtistTracks(artistName, limit);
+      } catch (error) {
+        console.error('Error getting artist tracks:', error);
+        return [];
+      }
+    });
+
+    ipcMain.handle('get-similar-tracks', async (event, trackId, platform, limit) => {
+      try {
+        return await this.streamingService.getSimilarTracks(trackId, platform, limit);
+      } catch (error) {
+        console.error('Error getting similar tracks:', error);
+        return [];
+      }
+    });
+
+    ipcMain.handle('get-followed-artists-tracks', async (event, limit) => {
+      try {
+        return await this.streamingService.getFollowedArtistsTracks(limit);
+      } catch (error) {
+        console.error('Error getting followed artists tracks:', error);
+        return [];
+      }
+    });
+
+    // Platform functionality
+    ipcMain.handle('get-supported-platforms', async () => {
+      return this.streamingService.getSupportedPlatforms();
+    });
+
+    ipcMain.handle('is-platform-supported', async (event, platform) => {
+      return this.streamingService.isPlatformSupported(platform);
+    });
+
+    // Stream URL functionality
+    ipcMain.handle('get-stream-url', async (event, trackId, platform) => {
+      try {
+        return await this.streamingService.getStreamUrl(trackId, platform);
+      } catch (error) {
+        console.error('Error getting stream URL:', error);
+        return null;
+      }
+    });
+
+    // Enhanced stream URL with fallback
+    ipcMain.handle('get-stream-url-with-fallback', async (event, trackId, primaryPlatform) => {
+      try {
+        return await this.streamingService.getStreamUrlWithFallback(trackId, primaryPlatform);
+      } catch (error) {
+        console.error('Error getting stream URL with fallback:', error);
+        return null;
+      }
+    });
+
+    ipcMain.handle('get-track-info', async (event, trackId, platform) => {
+      try {
+        return await this.streamingService.getTrackInfo(trackId, platform);
+      } catch (error) {
+        console.error('Error getting track info:', error);
+        return null;
+      }
+    });
+
+    // Artist following functionality
+    ipcMain.handle('follow-artist-streaming', async (event, artistName) => {
+      try {
+        return await this.streamingService.followArtist(artistName);
+      } catch (error) {
+        console.error('Error following artist:', error);
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle('unfollow-artist-streaming', async (event, artistName) => {
+      try {
+        return await this.streamingService.unfollowArtist(artistName);
+      } catch (error) {
+        console.error('Error unfollowing artist:', error);
+        return { success: false, error: error.message };
+      }
+    });
+
+    // Cache functionality
+    ipcMain.handle('clear-streaming-cache', async () => {
+      try {
+        return await this.streamingService.clearCache();
+      } catch (error) {
+        console.error('Error clearing streaming cache:', error);
+        return { success: false, error: error.message };
+      }
+    });
+
+    // System health and monitoring
+    ipcMain.handle('streaming-health-check', async () => {
+      try {
+        return await this.streamingService.healthCheck();
+      } catch (error) {
+        console.error('Error in streaming health check:', error);
+        return { healthy: false, message: error.message };
+      }
+    });
+
+    ipcMain.handle('get-streaming-stats', async () => {
+      return this.streamingService.getStats();
+    });
+
+    // Fallback settings
+    ipcMain.handle('set-fallback-enabled', async (event, enabled) => {
+      try {
+        this.streamingService.fallbackEnabled = enabled;
+        return { success: true };
+      } catch (error) {
+        console.error('Error setting fallback enabled:', error);
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle('get-fallback-enabled', async () => {
+      return this.streamingService.fallbackEnabled;
+    });
+
+    // Playback control
+    ipcMain.handle('start-streaming', async (event, streamUrl) => {
+      try {
+        await this.streamingService.startStreaming(streamUrl);
+        return { success: true };
+      } catch (error) {
+        console.error('Error starting streaming:', error);
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle('stop-streaming', async () => {
+      try {
+        await this.streamingService.stopStreaming();
+        return { success: true };
+      } catch (error) {
+        console.error('Error stopping streaming:', error);
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle('is-streaming', async () => {
+      return this.streamingService.isStreaming();
+    });
+
+    ipcMain.handle('get-current-track', async () => {
+      return this.streamingService.getCurrentTrack();
+    });
+
+    ipcMain.handle('get-volume', async () => {
+      return this.streamingService.getVolume();
+    });
+
+    ipcMain.handle('set-volume', async (event, volume) => {
+      try {
+        await this.streamingService.setVolume(volume);
+        return { success: true };
+      } catch (error) {
+        console.error('Error setting volume:', error);
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle('next-track', async () => {
+      try {
+        await this.streamingService.nextTrack();
+        return { success: true };
+      } catch (error) {
+        console.error('Error next track:', error);
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle('previous-track', async () => {
+      try {
+        await this.streamingService.previousTrack();
+        return { success: true };
+      } catch (error) {
+        console.error('Error previous track:', error);
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle('toggle-shuffle', async () => {
+      try {
+        await this.streamingService.toggleShuffle();
+        return { success: true };
+      } catch (error) {
+        console.error('Error toggling shuffle:', error);
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle('is-shuffle-on', async () => {
+      return this.streamingService.isShuffleOn();
+    });
+
+    ipcMain.handle('toggle-repeat', async () => {
+      try {
+        await this.streamingService.toggleRepeat();
+        return { success: true };
+      } catch (error) {
+        console.error('Error toggling repeat:', error);
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle('is-repeat-on', async () => {
+      return this.streamingService.isRepeatOn();
+    });
+  }
+}
+
+module.exports = IPCHandlers;
