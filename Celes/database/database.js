@@ -442,7 +442,7 @@ class MusicDatabase {
       const maxPosition = this.db.prepare('SELECT MAX(position) as max_pos FROM playlist_songs WHERE playlist_id = ?').get(playlistId);
       const newPosition = (maxPosition.max_pos || 0) + 1;
       
-      this.db.prepare('INSERT OR IGNORE INTO playlist_songs (playlist_id, song_id, position) VALUES (?, ?, ?)').run(
+      this.db.prepare('INSERT OR REPLACE INTO playlist_songs (playlist_id, song_id, position) VALUES (?, ?, ?)').run(
         playlistId, songId, newPosition
       );
       
@@ -489,6 +489,19 @@ class MusicDatabase {
 
       this.db.prepare('UPDATE songs SET is_liked = ?, liked_date = ? WHERE id = ?')
         .run(newLikedState, likedDate, songId);
+
+      // Maintain "Liked Songs" playlist membership
+      const likedPl = this.db.prepare('SELECT id FROM playlists WHERE name = ?').get('Liked Songs');
+      if (likedPl && likedPl.id) {
+        if (newLikedState) {
+          const maxPos = this.db.prepare('SELECT MAX(position) as max_pos FROM playlist_songs WHERE playlist_id = ?').get(likedPl.id);
+          const newPos = (maxPos.max_pos || 0) + 1;
+          this.db.prepare('INSERT OR IGNORE INTO playlist_songs (playlist_id, song_id, position) VALUES (?, ?, ?)')
+            .run(likedPl.id, songId, newPos);
+        } else {
+          this.db.prepare('DELETE FROM playlist_songs WHERE playlist_id = ? AND song_id = ?').run(likedPl.id, songId);
+        }
+      }
 
       return { 
         success: true, 

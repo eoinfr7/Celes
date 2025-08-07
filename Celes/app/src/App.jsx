@@ -175,6 +175,29 @@ export default function App() {
     return `${m}:${ss}`
   }
 
+  async function persistTrack(track) {
+    try {
+      // If it's a stream, store minimal metadata in DB via addStreamingTrack
+      if (track && track.type === 'stream') {
+        const payload = {
+          title: track.title,
+          artist: track.artist,
+          album: track.album || (track.platform === 'youtube' ? 'YouTube Music' : 'Streaming'),
+          duration: track.duration || 0,
+          platform: track.platform,
+          stream_id: String(track.id),
+          stream_url: track.streamUrl || track.url || null,
+          thumbnail_url: track.thumbnail || null,
+        }
+        const res = await window.electronAPI.addStreamingTrack?.(payload)
+        return res?.songId || null
+      }
+      return null
+    } catch {
+      return null
+    }
+  }
+
   useEffect(() => {
     if (view === 'home') loadHome()
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -277,7 +300,10 @@ export default function App() {
                       <div className="flex gap-2">
                         <Button className="mt-1 flex-1" onClick={() => doPlay(t)}>Play</Button>
                         <Button className="mt-1" variant="ghost" onClick={() => addToQueue(t)}>+ Queue</Button>
-                        <Button className="mt-1" variant="ghost" onClick={() => {
+                        <Button className="mt-1" variant="ghost" onClick={async () => {
+                          // Persist then add to chosen playlist
+                          const id = await persistTrack(t)
+                          if (!id) { alert('Could not save track'); return }
                           let pid = activePlaylistId
                           if (!pid) {
                             const names = playlists.map((p, i) => `${i+1}. ${p.name}`)
@@ -288,7 +314,12 @@ export default function App() {
                             else { createPlaylist(choice.trim()); pid = (playlists[playlists.length-1]?.id) }
                           }
                           addTrackToPlaylist(pid, t)
+                          await window.electronAPI.addSongToPlaylist?.(pid, id)
                         }}>+ Playlist</Button>
+                        <Button className="mt-1" variant="ghost" onClick={async () => {
+                          const id = await persistTrack(t)
+                          if (id) await window.electronAPI.toggleLikeSong?.(id)
+                        }}>♥</Button>
                       </div>
                     </div>
                   ))}
