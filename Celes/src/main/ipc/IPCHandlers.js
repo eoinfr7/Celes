@@ -80,6 +80,24 @@ class IPCHandlers {
       return this.database.renamePlaylist(playlistId, newName);
     });
 
+    // Playlist cover image upload
+    ipcMain.handle('update-playlist-cover', async (event, playlistId, imageDataUrl) => {
+      try {
+        // imageDataUrl is expected as a data URL (e.g., data:image/png;base64,....)
+        if (!imageDataUrl || typeof imageDataUrl !== 'string' || !imageDataUrl.startsWith('data:')) {
+          return { success: false, error: 'Invalid image data' };
+        }
+        const [meta, b64] = imageDataUrl.split(',');
+        const mimeMatch = /^data:([^;]+);base64$/i.exec(meta || '');
+        const mime = (mimeMatch && mimeMatch[1]) || 'image/png';
+        const buffer = Buffer.from(b64, 'base64');
+        return this.database.updatePlaylistCover(playlistId, buffer, mime);
+      } catch (error) {
+        console.error('Error updating playlist cover:', error);
+        return { success: false, error: error.message };
+      }
+    });
+
     // Artist following handlers
     ipcMain.handle('follow-artist', async (event, artistName, platform) => {
       return this.database.followArtist(artistName, platform);

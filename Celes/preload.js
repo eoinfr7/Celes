@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   addSongToPlaylist: (playlistId, songId) => ipcRenderer.invoke('add-song-to-playlist', playlistId, songId),
   deletePlaylist: (playlistId) => ipcRenderer.invoke('delete-playlist', playlistId),
   renamePlaylist: (playlistId, newName) => ipcRenderer.invoke('rename-playlist', playlistId, newName),
+  updatePlaylistCover: (playlistId, imageDataUrl) => ipcRenderer.invoke('update-playlist-cover', playlistId, imageDataUrl),
   
   // Album art
   getAlbumArt: (songId) => ipcRenderer.invoke('get-album-art', songId),

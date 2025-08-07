@@ -31,7 +31,7 @@ export default function App() {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
-  const [view, setView] = useState('search')
+  const [view, setView] = useState('home')
   const platforms = useMemo(() => ['soundcloud', 'internetarchive'], [])
   const [platform] = useState('soundcloud')
   const [queue, setQueue] = useState([])
@@ -47,6 +47,30 @@ export default function App() {
     try { const v = Number(localStorage.getItem('celes.volume')); return Number.isFinite(v)? Math.max(0, Math.min(1, v)) : 0.8 } catch { return 0.8 }
   })
   const audioRef = useRef(null)
+
+  // Home: daily mixes / charts
+  const [dailyMix, setDailyMix] = useState([])
+  const [chartsSC, setChartsSC] = useState([])
+  const [chartsYT, setChartsYT] = useState([])
+  const [homeLoading, setHomeLoading] = useState(false)
+
+  async function loadHome() {
+    setHomeLoading(true)
+    try {
+      // Release Radar proxy (uses trending-like queries under the hood)
+      const radar = await window.electronAPI.getReleaseRadar?.(24)
+      setDailyMix(Array.isArray(radar) ? radar : [])
+      // Simple charts: search common chart terms per platform
+      const yt = await window.electronAPI.searchMusicWithFallback('top hits 2025', 'youtube', 18)
+      setChartsYT(yt || [])
+      const sc = await window.electronAPI.searchMusicWithFallback('soundcloud charts', 'soundcloud', 18)
+      setChartsSC(sc || [])
+    } catch (e) {
+      // ignore
+    } finally {
+      setHomeLoading(false)
+    }
+  }
 
   async function doSearch() {
     if (!query.trim()) return
@@ -100,8 +124,18 @@ export default function App() {
 
   function createPlaylist(name) {
     const id = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
-    savePlaylists([ ...playlists, { id, name, tracks: [] } ])
+    savePlaylists([ ...playlists, { id, name, tracks: [], cover: null } ])
     setActivePlaylistId(id)
+  }
+
+  function renamePlaylist(playlistId, newName) {
+    const next = playlists.map(p => p.id === playlistId ? { ...p, name: newName } : p)
+    savePlaylists(next)
+  }
+
+  function setPlaylistCover(playlistId, dataUrl) {
+    const next = playlists.map(p => p.id === playlistId ? { ...p, cover: dataUrl } : p)
+    savePlaylists(next)
   }
 
   function addTrackToPlaylist(playlistId, track) {
@@ -140,6 +174,11 @@ export default function App() {
   }
 
   useEffect(() => {
+    if (view === 'home') loadHome()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view])
+
+  useEffect(() => {
     const audio = audioRef.current
     if (!audio) return
     audio.volume = volume
@@ -166,6 +205,25 @@ export default function App() {
 
   useEffect(() => { window.electronAPI.streamingHealthCheck?.() }, [])
 
+  const SectionCard = ({ title, items }) => (
+    <div className="bg-neutral-900 border border-neutral-800 rounded p-3">
+      <div className="text-sm font-semibold mb-2">{title}</div>
+      <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}>
+        {(items || []).map((t) => (
+          <div key={t.id} className="bg-neutral-900/60 border border-neutral-800 rounded p-3 flex flex-col gap-2">
+            <img alt={t.title} src={t.thumbnail || 'https://via.placeholder.com/300x200/4a9eff/ffffff?text=♫'} className="w-full h-36 object-cover rounded" />
+            <div className="text-sm font-medium line-clamp-2">{t.title}</div>
+            <div className="text-xs text-neutral-400">{t.artist} • {t.platform}</div>
+            <div className="flex gap-2">
+              <Button className="mt-1 flex-1" onClick={() => doPlay(t)}>Play</Button>
+              <Button className="mt-1" variant="ghost" onClick={() => addToQueue(t)}>+ Queue</Button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 flex">
       <Sidebar onSelect={setView} />
@@ -175,7 +233,7 @@ export default function App() {
           <div className="hidden md:flex items-center gap-2 px-2 py-1 rounded bg-neutral-900 border border-neutral-800 flex-1 max-w-3xl">
             <input
               className="bg-transparent outline-none text-sm w-full"
-              placeholder="Ask for any song, artist, mood… (Perplexity-style)"
+              placeholder="Ask for any song, artist, mood…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') doSearch() }}
@@ -187,27 +245,43 @@ export default function App() {
 
         {/* Content */}
         <main className="flex-1 grid lg:grid-cols-[1fr_320px_340px] md:grid-cols-[1fr_320px] gap-4 p-4 pb-28">
-          {/* Results / Chat-like feed */}
+          {/* Left content */}
           <section className="space-y-3">
-            {!results.length && (
-              <div className="text-sm text-neutral-400">
-                Type anything – e.g. “calming piano at night”, “vocal jazz 50s”, “beethoven sonata 14”.
-              </div>
+            {view === 'home' && (
+              <>
+                {homeLoading && <div className="text-sm text-neutral-400">Loading mixes…</div>}
+                {!homeLoading && (
+                  <>
+                    <SectionCard title="Daily Mix" items={dailyMix} />
+                    <SectionCard title="YouTube Charts" items={chartsYT} />
+                    <SectionCard title="SoundCloud Charts" items={chartsSC} />
+                  </>
+                )}
+              </>
             )}
-              <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
-              {results.map((t) => (
-                <div key={t.id} className="bg-neutral-900 border border-neutral-800 rounded p-3 flex flex-col gap-2">
-                  <img alt={t.title} src={t.thumbnail || 'https://via.placeholder.com/300x200/4a9eff/ffffff?text=♫'} className="w-full h-36 object-cover rounded" />
-                  <div className="text-sm font-medium line-clamp-2">{t.title}</div>
-                  <div className="text-xs text-neutral-400">{t.artist} • {t.platform}</div>
-                  <div className="flex gap-2">
-                    <Button className="mt-1 flex-1" onClick={() => doPlay(t)}>Play</Button>
-                      <Button className="mt-1" variant="ghost" onClick={() => addToQueue(t)}>+ Queue</Button>
-                      <Button className="mt-1" variant="ghost" onClick={() => addTrackToPlaylist(activePlaylistId || createPlaylist('My Playlist'), t)}>+ Playlist</Button>
+            {view === 'search' && (
+              <>
+                {!results.length && (
+                  <div className="text-sm text-neutral-400">
+                    Type anything – e.g. “calming piano at night”, “vocal jazz 50s”, “beethoven sonata 14”.
                   </div>
+                )}
+                <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
+                  {results.map((t) => (
+                    <div key={t.id} className="bg-neutral-900 border border-neutral-800 rounded p-3 flex flex-col gap-2">
+                      <img alt={t.title} src={t.thumbnail || 'https://via.placeholder.com/300x200/4a9eff/ffffff?text=♫'} className="w-full h-36 object-cover rounded" />
+                      <div className="text-sm font-medium line-clamp-2">{t.title}</div>
+                      <div className="text-xs text-neutral-400">{t.artist} • {t.platform}</div>
+                      <div className="flex gap-2">
+                        <Button className="mt-1 flex-1" onClick={() => doPlay(t)}>Play</Button>
+                        <Button className="mt-1" variant="ghost" onClick={() => addToQueue(t)}>+ Queue</Button>
+                        <Button className="mt-1" variant="ghost" onClick={() => addTrackToPlaylist(activePlaylistId || createPlaylist('My Playlist'), t)}>+ Playlist</Button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </>
+            )}
           </section>
 
           {/* Queue panel */}
@@ -242,9 +316,33 @@ export default function App() {
               <div className="space-y-2">
                 {playlists.map(p => (
                   <div key={p.id} className={`border rounded p-2 ${activePlaylistId===p.id?'border-primary':'border-neutral-800'}`}>
-                    <div className="flex items-center justify-between">
-                      <div className="text-xs font-medium">{p.name} <span className="text-neutral-500">({p.tracks.length})</span></div>
-                      <Button variant="ghost" onClick={() => setActivePlaylistId(p.id)}>Open</Button>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-8 h-8 rounded bg-neutral-800 overflow-hidden flex items-center justify-center">
+                          {p.cover ? <img src={p.cover} alt="cover" className="w-full h-full object-cover"/> : <span className="text-[10px] text-neutral-500">★</span>}
+                        </div>
+                        <div className="text-xs font-medium truncate">{p.name} <span className="text-neutral-500">({p.tracks.length})</span></div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button variant="ghost" onClick={() => setActivePlaylistId(p.id)}>Open</Button>
+                        <Button variant="ghost" onClick={() => {
+                          const n = prompt('Rename playlist', p.name)
+                          if (n && n.trim()) renamePlaylist(p.id, n.trim())
+                        }}>Rename</Button>
+                        <Button variant="ghost" onClick={() => {
+                          const inp = document.createElement('input')
+                          inp.type = 'file'
+                          inp.accept = 'image/*'
+                          inp.onchange = async (e) => {
+                            const f = e.target.files?.[0]
+                            if (!f) return
+                            const reader = new FileReader()
+                            reader.onload = () => setPlaylistCover(p.id, reader.result)
+                            reader.readAsDataURL(f)
+                          }
+                          inp.click()
+                        }}>Cover</Button>
+                      </div>
                     </div>
                     {activePlaylistId===p.id && (
                       <div className="mt-2 space-y-1 max-h-48 overflow-auto pr-1">
@@ -291,7 +389,7 @@ export default function App() {
                 <SkipBack size={18} />
               </button>
               <button className="p-3 rounded-full bg-primary text-primary-foreground hover:bg-primary/90" onClick={togglePlayPause} aria-label="Play/Pause">
-                {isPlaying ? <Pause size={18}/> : <Play size={18}/>} 
+                {isPlaying ? <Pause size={18}/> : <Play size={18}/>}
               </button>
               <button className="p-2 rounded hover:bg-neutral-800" onClick={() => nextFromQueue()} aria-label="Next">
                 <SkipForward size={18} />
@@ -314,7 +412,7 @@ export default function App() {
           {/* Volume */}
           <div className="hidden md:flex items-center gap-2 w-48 justify-end">
             <button className="p-2 rounded hover:bg-neutral-800" onClick={() => setVolume(v => v > 0 ? 0 : 0.8)} aria-label="Mute">
-              {volume > 0 ? <Volume2 size={18}/> : <VolumeX size={18}/>} 
+              {volume > 0 ? <Volume2 size={18}/> : <VolumeX size={18}/>}
             </button>
             <input type="range" min={0} max={1} step={0.01} value={volume} onChange={(e) => setVolume(Number(e.target.value))} className="w-32 accent-primary" />
           </div>

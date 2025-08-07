@@ -72,7 +72,9 @@ class MusicDatabase {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL UNIQUE,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        type TEXT DEFAULT 'user'
+        type TEXT DEFAULT 'user',
+        cover_image BLOB,
+        cover_image_format TEXT
       );
 
       CREATE TABLE IF NOT EXISTS playlist_songs (
@@ -182,6 +184,24 @@ class MusicDatabase {
         }
 
         console.log('Database migration completed successfully');
+      });
+
+      // Playlists cover image migration
+      this.db.all("PRAGMA table_info(playlists)", (err, rows) => {
+        if (err) {
+          console.error('Error checking playlists table info:', err);
+          return;
+        }
+        const hasCover = rows.some(c => c.name === 'cover_image');
+        const hasCoverFmt = rows.some(c => c.name === 'cover_image_format');
+        if (!hasCover) {
+          console.log('Adding cover_image column to playlists table...');
+          this.db.run('ALTER TABLE playlists ADD COLUMN cover_image BLOB');
+        }
+        if (!hasCoverFmt) {
+          console.log('Adding cover_image_format column to playlists table...');
+          this.db.run('ALTER TABLE playlists ADD COLUMN cover_image_format TEXT');
+        }
       });
     } catch (error) {
       console.error('Error during database migration:', error);
@@ -587,6 +607,23 @@ class MusicDatabase {
       return { success: true, changes: result.changes };
     } catch (error) {
       console.error('Error renaming playlist:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  updatePlaylistCover(playlistId, imageBuffer, mimeType) {
+    try {
+      // Disallow covers for system playlists
+      const playlist = this.db.prepare('SELECT name, type FROM playlists WHERE id = ?').get(playlistId);
+      if (playlist && playlist.type === 'system') {
+        return { success: false, error: 'Cannot set cover for system playlists' };
+      }
+
+      this.db.prepare('UPDATE playlists SET cover_image = ?, cover_image_format = ? WHERE id = ?')
+        .run(imageBuffer, mimeType || 'image/png', playlistId);
+      return { success: true };
+    } catch (error) {
+      console.error('Error updating playlist cover:', error);
       return { success: false, error: error.message };
     }
   }
