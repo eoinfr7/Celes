@@ -2,6 +2,7 @@
 
 An open‑source desktop music player named after the FFIX character Celes and inspired by astronomy. Play local files and stream from YouTube and SoundCloud — no login.
 
+![Uploading Screenshot 2025-08-07 at 11.57.48 PM.png…]()
 
 
 ## Features
