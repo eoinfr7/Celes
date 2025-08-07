@@ -6,32 +6,13 @@ An open‑source desktop music player named after the FFIX character Celes and i
 
 ## Features
 
-### Core Functionality
-- **Local Music Library** - Import and organize your music files locally
-- **Smart Playback History** - Navigate through previously played songs with intelligent history tracking
-- **Queue Management** - Add songs to queue or play next with right-click context menus
-- **Search & Filter** - Real-time search across songs, artists, and albums
-- **Playlist Management** - Create and manage custom playlists
-
-### Audio Controls
-- **Standard Playback** - Play, pause, skip, previous with keyboard shortcuts
-- **Shuffle & Repeat** - Randomize playback or repeat current track
-- **Volume Control** - Smooth volume adjustment with visual feedback
-- **Progress Seeking** - Click anywhere on the progress bar to jump to that position
-
-### Smart Features
-- **Custom Notifications** - Clean overlay notifications when window is minimized
-- **Folder Watching** - Automatically detect new music files in watched directories
-- **Recently Played** - Auto-generated smart playlist of recent tracks
-- **Most Played** - Track and display your most frequently played songs
-- **Media Key Support** - Control playback with system media keys
-
-### Interface
-- **Wireframe Design** - Clean, minimal interface with subtle borders and typography
-- **Dark Theme** - Easy on the eyes with carefully chosen color palette
-- **Context Menus** - Right-click songs for quick actions and navigation
-- **System Tray** - Minimize to system tray for background playback
-- **Responsive Layout** - Adapts to different window sizes
+- Local library and playlists
+- Streaming from YouTube and SoundCloud (no login)
+- Fast search, queue, and context actions
+- Keyboard controls, shuffle/repeat, seek and volume
+- Smart history: Recently/Most played
+- Tray + notifications when minimized
+- Minimal dark UI that adapts to any window size
 
 ## Installation
 
@@ -138,8 +119,4 @@ Celes/
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Acknowledgments
-
-- Built with Electron for cross-platform compatibility
-- Icons provided by Lucide
-- Inspired by minimal design principles and modern music players
+ 
