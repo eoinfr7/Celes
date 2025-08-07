@@ -35,10 +35,15 @@ export default function App() {
   const platforms = useMemo(() => ['soundcloud', 'internetarchive'], [])
   const [platform] = useState('soundcloud')
   const [queue, setQueue] = useState([])
-  const [playlists, setPlaylists] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('celes.playlists') || '[]') } catch { return [] }
-  })
+
+  // Playlists from DB
+  const [playlists, setPlaylists] = useState([]) // [{id,name,type,songs:[...] }]
   const [activePlaylistId, setActivePlaylistId] = useState(null)
+  const [playlistCovers, setPlaylistCovers] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('celes.playlistCovers') || '{}') } catch { return {} }
+  })
+  const saveCovers = (next) => { setPlaylistCovers(next); try { localStorage.setItem('celes.playlistCovers', JSON.stringify(next)) } catch {} }
+
   const [currentTrack, setCurrentTrack] = useState(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [progress, setProgress] = useState(0)
@@ -47,6 +52,11 @@ export default function App() {
     try { const v = Number(localStorage.getItem('celes.volume')); return Number.isFinite(v)? Math.max(0, Math.min(1, v)) : 0.8 } catch { return 0.8 }
   })
   const audioRef = useRef(null)
+
+  async function reloadPlaylists() {
+    const res = await window.electronAPI.getPlaylists?.()
+    setPlaylists(Array.isArray(res) ? res : [])
+  }
 
   // Home: daily mixes / charts
   const [dailyMix, setDailyMix] = useState([])
@@ -58,27 +68,20 @@ export default function App() {
   async function loadHome() {
     setHomeLoading(true)
     try {
-      // Release Radar proxy (uses trending-like queries under the hood)
       const radar = await window.electronAPI.getReleaseRadar?.(24)
       setDailyMix(Array.isArray(radar) ? radar : [])
-      // Top charts (Top 50)
       const yt = await window.electronAPI.getTopCharts?.('youtube', 50)
       setChartsYT(yt || [])
       const sc = await window.electronAPI.getTopCharts?.('soundcloud', 50)
       setChartsSC(sc || [])
       setChartsDate(new Date().toLocaleDateString())
-    } catch (e) {
-      // ignore
-    } finally {
-      setHomeLoading(false)
-    }
+    } finally { setHomeLoading(false) }
   }
 
   async function doSearch() {
     if (!query.trim()) return
     setLoading(true)
     try {
-      // Default to YouTube with fallback to SoundCloud/Internet Archive for better hit rate
       const res = await window.electronAPI.searchMusicWithFallback(query, 'youtube', 24)
       setResults(res || [])
     } finally {
@@ -107,77 +110,12 @@ export default function App() {
     }
   }
 
-  function addToQueue(track) {
-    setQueue((q) => [...q, track])
-  }
-
-  function playNext(track) {
-    setQueue((q) => [track, ...q])
-  }
-
-  function removeFromQueue(idx) {
-    setQueue((q) => q.filter((_, i) => i !== idx))
-  }
-
-  function savePlaylists(next) {
-    setPlaylists(next)
-    try { localStorage.setItem('celes.playlists', JSON.stringify(next)) } catch {}
-  }
-
-  function createPlaylist(name) {
-    const id = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
-    savePlaylists([ ...playlists, { id, name, tracks: [], cover: null } ])
-    setActivePlaylistId(id)
-  }
-
-  function renamePlaylist(playlistId, newName) {
-    const next = playlists.map(p => p.id === playlistId ? { ...p, name: newName } : p)
-    savePlaylists(next)
-  }
-
-  function setPlaylistCover(playlistId, dataUrl) {
-    const next = playlists.map(p => p.id === playlistId ? { ...p, cover: dataUrl } : p)
-    savePlaylists(next)
-  }
-
-  function addTrackToPlaylist(playlistId, track) {
-    const next = playlists.map(p => p.id === playlistId ? { ...p, tracks: [...p.tracks, track] } : p)
-    savePlaylists(next)
-  }
-
-  function removeTrackFromPlaylist(playlistId, index) {
-    const next = playlists.map(p => p.id === playlistId ? { ...p, tracks: p.tracks.filter((_, i) => i !== index) } : p)
-    savePlaylists(next)
-  }
-
-  const activePlaylist = playlists.find(p => p.id === activePlaylistId) || null
-
-  function nextFromQueue() {
-    setQueue((q) => {
-      if (q.length === 0) { setIsPlaying(false); return q }
-      const [next, ...rest] = q
-      // fire and forget; state update will happen inside doPlay
-      void doPlay(next)
-      return rest
-    })
-  }
-
-  function togglePlayPause() {
-    const audio = audioRef.current
-    if (!audio) return
-    if (audio.paused) { audio.play().then(() => setIsPlaying(true)).catch(() => {}) } else { audio.pause(); setIsPlaying(false) }
-  }
-
-  function fmtTime(s) {
-    if (!Number.isFinite(s) || s < 0) return '0:00'
-    const m = Math.floor(s / 60)
-    const ss = Math.floor(s % 60).toString().padStart(2, '0')
-    return `${m}:${ss}`
-  }
+  function addToQueue(track) { setQueue((q) => [...q, track]) }
+  function playNext(track) { setQueue((q) => [track, ...q]) }
+  function removeFromQueue(idx) { setQueue((q) => q.filter((_, i) => i !== idx)) }
 
   async function persistTrack(track) {
     try {
-      // If it's a stream, store minimal metadata in DB via addStreamingTrack
       if (track && track.type === 'stream') {
         const payload = {
           title: track.title,
@@ -193,15 +131,60 @@ export default function App() {
         return res?.songId || null
       }
       return null
-    } catch {
-      return null
-    }
+    } catch { return null }
   }
 
-  useEffect(() => {
-    if (view === 'home') loadHome()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view])
+  async function createPlaylist(name) {
+    const res = await window.electronAPI.createPlaylist?.(name)
+    await reloadPlaylists();
+    if (res?.playlistId) setActivePlaylistId(res.playlistId)
+  }
+
+  async function renamePlaylist(playlistId, newName) {
+    await window.electronAPI.renamePlaylist?.(playlistId, newName)
+    await reloadPlaylists()
+  }
+
+  async function deletePlaylist(playlistId) {
+    await window.electronAPI.deletePlaylist?.(playlistId)
+    if (activePlaylistId === playlistId) setActivePlaylistId(null)
+    await reloadPlaylists()
+  }
+
+  async function setPlaylistCover(playlistId, dataUrl) {
+    const next = { ...playlistCovers, [playlistId]: dataUrl }
+    saveCovers(next)
+    await window.electronAPI.updatePlaylistCover?.(playlistId, dataUrl)
+  }
+
+  async function addTrackToDbPlaylist(playlistId, track) {
+    const id = await persistTrack(track)
+    if (!id) { alert('Could not save track'); return }
+    await window.electronAPI.addSongToPlaylist?.(playlistId, id)
+    await reloadPlaylists()
+  }
+
+  const activePlaylist = playlists.find(p => p.id === activePlaylistId) || null
+
+  function nextFromQueue() {
+    setQueue((q) => {
+      if (q.length === 0) { setIsPlaying(false); return q }
+      const [next, ...rest] = q
+      void doPlay(next)
+      return rest
+    })
+  }
+
+  function togglePlayPause() {
+    const audio = audioRef.current
+    if (!audio) return
+    if (audio.paused) { audio.play().then(() => setIsPlaying(true)).catch(() => {}) } else { audio.pause(); setIsPlaying(false) }
+  }
+
+  function fmtTime(s) { if (!Number.isFinite(s) || s < 0) return '0:00'; const m=Math.floor(s/60); const ss=Math.floor(s%60).toString().padStart(2,'0'); return `${m}:${ss}` }
+
+  useEffect(() => { if (view === 'home') loadHome() }, [view])
+  useEffect(() => { reloadPlaylists() }, [])
 
   useEffect(() => {
     const audio = audioRef.current
@@ -227,7 +210,6 @@ export default function App() {
   }, [audioRef.current])
 
   useEffect(() => { try { localStorage.setItem('celes.volume', String(volume)) } catch {} ; if (audioRef.current) audioRef.current.volume = volume }, [volume])
-
   useEffect(() => { window.electronAPI.streamingHealthCheck?.() }, [])
 
   const SectionCard = ({ title, items }) => (
@@ -242,6 +224,22 @@ export default function App() {
             <div className="flex gap-2">
               <Button className="mt-1 flex-1" onClick={() => doPlay(t)}>Play</Button>
               <Button className="mt-1" variant="ghost" onClick={() => addToQueue(t)}>+ Queue</Button>
+              <Button className="mt-1" variant="ghost" onClick={async () => {
+                let pid = activePlaylistId
+                if (!pid || !playlists.find(p=>p.id===pid)) {
+                  const names = playlists.map((p, i) => `${i+1}. ${p.name}`)
+                  const choice = prompt(`Add to which playlist?\n${names.join('\n')}\nOr type a new name:`)
+                  if (!choice) return
+                  const idx = Number(choice)-1
+                  if (Number.isInteger(idx) && idx >= 0 && idx < playlists.length) pid = playlists[idx].id
+                  else { const created = await createPlaylist(choice.trim()); pid = playlists[playlists.length-1]?.id }
+                }
+                await addTrackToDbPlaylist(pid, t)
+              }}>+ Playlist</Button>
+              <Button className="mt-1" variant="ghost" onClick={async () => {
+                const id = await persistTrack(t)
+                if (id) await window.electronAPI.toggleLikeSong?.(id)
+              }}>♥</Button>
             </div>
           </div>
         ))}
@@ -253,44 +251,29 @@ export default function App() {
     <div className="min-h-screen bg-neutral-950 text-neutral-100 flex">
       <Sidebar onSelect={setView} />
       <div className="flex-1 flex flex-col">
-        {/* Top bar */}
         <header className="h-14 border-b border-neutral-800 flex items-center px-4 gap-3">
           <div className="hidden md:flex items-center gap-2 px-2 py-1 rounded bg-neutral-900 border border-neutral-800 flex-1 max-w-3xl">
-            <input
-              className="bg-transparent outline-none text-sm w-full"
-              placeholder="Ask for any song, artist, mood…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') doSearch() }}
-            />
+            <input className="bg-transparent outline-none text-sm w-full" placeholder="Ask for any song, artist, mood…" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') doSearch() }} />
             <Button onClick={doSearch} disabled={loading}>{loading ? 'Searching…' : 'Search'}</Button>
           </div>
           <div className="md:hidden flex-1" />
         </header>
 
-        {/* Content */}
         <main className="flex-1 grid lg:grid-cols-[1fr_320px_340px] md:grid-cols-[1fr_320px] gap-4 p-4 pb-28">
-          {/* Left content */}
           <section className="space-y-3">
             {view === 'home' && (
               <>
                 {homeLoading && <div className="text-sm text-neutral-400">Loading mixes…</div>}
-                {!homeLoading && (
-                  <>
-                    <SectionCard title={`Daily Mix • ${chartsDate}`} items={dailyMix} />
-                    <SectionCard title={`YouTube Top 50 • ${chartsDate}`} items={chartsYT} />
-                    <SectionCard title={`SoundCloud Top 50 • ${chartsDate}`} items={chartsSC} />
-                  </>
-                )}
+                {!homeLoading && (<>
+                  <SectionCard title={`Daily Mix • ${chartsDate}`} items={dailyMix} />
+                  <SectionCard title={`YouTube Top 50 • ${chartsDate}`} items={chartsYT} />
+                  <SectionCard title={`SoundCloud Top 50 • ${chartsDate}`} items={chartsSC} />
+                </>)}
               </>
             )}
             {view === 'search' && (
               <>
-                {!results.length && (
-                  <div className="text-sm text-neutral-400">
-                    Type anything – e.g. “calming piano at night”, “vocal jazz 50s”, “beethoven sonata 14”.
-                  </div>
-                )}
+                {!results.length && <div className="text-sm text-neutral-400">Type anything – e.g. “calming piano at night”, “vocal jazz 50s”, “beethoven sonata 14”.</div>}
                 <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
                   {results.map((t) => (
                     <div key={t.id} className="bg-neutral-900 border border-neutral-800 rounded p-3 flex flex-col gap-2">
@@ -301,20 +284,16 @@ export default function App() {
                         <Button className="mt-1 flex-1" onClick={() => doPlay(t)}>Play</Button>
                         <Button className="mt-1" variant="ghost" onClick={() => addToQueue(t)}>+ Queue</Button>
                         <Button className="mt-1" variant="ghost" onClick={async () => {
-                          // Persist then add to chosen playlist
-                          const id = await persistTrack(t)
-                          if (!id) { alert('Could not save track'); return }
                           let pid = activePlaylistId
-                          if (!pid) {
+                          if (!pid || !playlists.find(p=>p.id===pid)) {
                             const names = playlists.map((p, i) => `${i+1}. ${p.name}`)
                             const choice = prompt(`Add to which playlist?\n${names.join('\n')}\nOr type a new name:`)
                             if (!choice) return
                             const idx = Number(choice)-1
                             if (Number.isInteger(idx) && idx >= 0 && idx < playlists.length) pid = playlists[idx].id
-                            else { createPlaylist(choice.trim()); pid = (playlists[playlists.length-1]?.id) }
+                            else { await createPlaylist(choice.trim()); pid = playlists[playlists.length-1]?.id }
                           }
-                          addTrackToPlaylist(pid, t)
-                          await window.electronAPI.addSongToPlaylist?.(pid, id)
+                          await addTrackToDbPlaylist(pid, t)
                         }}>+ Playlist</Button>
                         <Button className="mt-1" variant="ghost" onClick={async () => {
                           const id = await persistTrack(t)
@@ -328,7 +307,6 @@ export default function App() {
             )}
           </section>
 
-          {/* Queue panel */}
           <aside className="hidden md:flex flex-col gap-3">
             <div className="bg-neutral-900 border border-neutral-800 rounded p-3">
               <div className="text-sm font-semibold mb-2">Queue</div>
@@ -346,7 +324,6 @@ export default function App() {
             </div>
           </aside>
 
-          {/* Now playing / insights & playlists */}
           <aside className="hidden lg:flex flex-col gap-3">
             <div className="bg-neutral-900 border border-neutral-800 rounded p-3">
               <div className="text-sm font-semibold mb-2">Now playing</div>
@@ -355,7 +332,10 @@ export default function App() {
             <div className="bg-neutral-900 border border-neutral-800 rounded p-3">
               <div className="text-sm font-semibold mb-2">Playlists</div>
               <div className="flex gap-2 mb-2">
-                <Button onClick={() => createPlaylist(`Playlist ${playlists.length+1}`)}>New</Button>
+                <Button onClick={() => {
+                  const n = prompt('New playlist name', `Playlist ${playlists.length+1}`)
+                  if (n && n.trim()) createPlaylist(n.trim())
+                }}>New</Button>
               </div>
               <div className="space-y-2">
                 {playlists.map(p => (
@@ -363,40 +343,31 @@ export default function App() {
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2 min-w-0">
                         <div className="w-8 h-8 rounded bg-neutral-800 overflow-hidden flex items-center justify-center">
-                          {p.cover ? <img src={p.cover} alt="cover" className="w-full h-full object-cover"/> : <span className="text-[10px] text-neutral-500">★</span>}
+                          {playlistCovers[p.id] ? <img src={playlistCovers[p.id]} alt="cover" className="w-full h-full object-cover"/> : <span className="text-[10px] text-neutral-500">★</span>}
                         </div>
-                        <div className="text-xs font-medium truncate">{p.name} <span className="text-neutral-500">({p.tracks.length})</span></div>
+                        <div className="text-xs font-medium truncate">{p.name} <span className="text-neutral-500">({p.songs?.length || 0})</span></div>
                       </div>
                       <div className="flex items-center gap-2">
                         <Button variant="ghost" onClick={() => setActivePlaylistId(p.id)}>Open</Button>
-                        <Button variant="ghost" onClick={() => {
-                          const n = prompt('Rename playlist', p.name)
-                          if (n && n.trim()) renamePlaylist(p.id, n.trim())
-                        }}>Rename</Button>
-                        <Button variant="ghost" onClick={() => {
-                          const inp = document.createElement('input')
-                          inp.type = 'file'
-                          inp.accept = 'image/*'
-                          inp.onchange = async (e) => {
-                            const f = e.target.files?.[0]
-                            if (!f) return
-                            const reader = new FileReader()
-                            reader.onload = () => setPlaylistCover(p.id, reader.result)
-                            reader.readAsDataURL(f)
-                          }
-                          inp.click()
-                        }}>Cover</Button>
+                        {p.type !== 'system' && (
+                          <>
+                            <Button variant="ghost" onClick={() => { const n = prompt('Rename playlist', p.name); if (n && n.trim()) renamePlaylist(p.id, n.trim()) }}>Rename</Button>
+                            <Button variant="ghost" onClick={() => {
+                              const inp = document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.onchange = async (e) => { const f = e.target.files?.[0]; if (!f) return; const reader = new FileReader(); reader.onload = () => setPlaylistCover(p.id, reader.result); reader.readAsDataURL(f); }; inp.click();
+                            }}>Cover</Button>
+                            <Button variant="ghost" onClick={() => { if (confirm(`Delete playlist "${p.name}"?`)) deletePlaylist(p.id) }}>Delete</Button>
+                          </>
+                        )}
                       </div>
                     </div>
                     {activePlaylistId===p.id && (
                       <div className="mt-2 space-y-1 max-h-48 overflow-auto pr-1">
-                        {p.tracks.length === 0 && <div className="text-xs text-neutral-500">No tracks yet</div>}
-                        {p.tracks.map((t, idx) => (
+                        {(p.songs?.length || 0) === 0 && <div className="text-xs text-neutral-500">No tracks yet</div>}
+                        {(p.songs || []).map((t, idx) => (
                           <div key={`${t.id}_${idx}`} className="text-xs flex items-center gap-2">
-                            <img src={t.thumbnail || 'https://via.placeholder.com/28'} className="w-7 h-7 rounded object-cover"/>
+                            <img src={t.thumbnail_url || t.thumbnail || 'https://via.placeholder.com/28'} className="w-7 h-7 rounded object-cover"/>
                             <div className="flex-1 truncate">{t.title}</div>
-                            <Button variant="ghost" onClick={() => doPlay(t)}>Play</Button>
-                            <Button variant="ghost" onClick={() => removeTrackFromPlaylist(p.id, idx)}>Remove</Button>
+                            <Button variant="ghost" onClick={() => doPlay({ ...t, platform: t.platform || t.type === 'stream' ? t.platform : 'internetarchive' })}>Play</Button>
                           </div>
                         ))}
                       </div>
@@ -408,56 +379,31 @@ export default function App() {
           </aside>
         </main>
       </div>
-      {/* Bottom player bar */}
       <div className="fixed bottom-0 left-0 right-0 border-t border-neutral-800 bg-neutral-950/90 backdrop-blur supports-[backdrop-filter]:bg-neutral-950/60">
         <div className="mx-auto max-w-screen-2xl px-4 h-20 flex items-center gap-4">
-          {/* Track thumbnail and title */}
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-14 h-14 bg-neutral-800 rounded overflow-hidden flex items-center justify-center">
-              {currentTrack ? (
-                <img alt={currentTrack.title} src={currentTrack.thumbnail || 'https://via.placeholder.com/56'} className="w-full h-full object-cover" />
-              ) : (
-                <span className="text-xs text-neutral-500">♫</span>
-              )}
+              {currentTrack ? (<img alt={currentTrack.title} src={currentTrack.thumbnail || 'https://via.placeholder.com/56'} className="w-full h-full object-cover" />) : (<span className="text-xs text-neutral-500">♫</span>)}
             </div>
             <div className="min-w-0">
               <div className="text-sm font-medium truncate max-w-[220px]">{currentTrack?.title || 'Nothing playing'}</div>
               <div className="text-xs text-neutral-400 truncate max-w-[220px]">{currentTrack?.artist || ''}</div>
             </div>
           </div>
-
-          {/* Controls */}
           <div className="flex-1 flex flex-col gap-1 items-center">
             <div className="flex items-center gap-4">
-              <button className="p-2 rounded hover:bg-neutral-800" onClick={() => nextFromQueue()} aria-label="Previous">
-                <SkipBack size={18} />
-              </button>
-              <button className="p-3 rounded-full bg-primary text-primary-foreground hover:bg-primary/90" onClick={togglePlayPause} aria-label="Play/Pause">
-                {isPlaying ? <Pause size={18}/> : <Play size={18}/>}
-              </button>
-              <button className="p-2 rounded hover:bg-neutral-800" onClick={() => nextFromQueue()} aria-label="Next">
-                <SkipForward size={18} />
-              </button>
+              <button className="p-2 rounded hover:bg-neutral-800" onClick={() => nextFromQueue()} aria-label="Previous"><SkipBack size={18} /></button>
+              <button className="p-3 rounded-full bg-primary text-primary-foreground hover:bg-primary/90" onClick={togglePlayPause} aria-label="Play/Pause">{isPlaying ? <Pause size={18}/> : <Play size={18}/>}</button>
+              <button className="p-2 rounded hover:bg-neutral-800" onClick={() => nextFromQueue()} aria-label="Next"><SkipForward size={18} /></button>
             </div>
             <div className="flex items-center gap-3 w-full max-w-xl">
               <span className="text-[11px] text-neutral-400 w-10 text-right">{fmtTime(progress)}</span>
-              <input
-                type="range"
-                min={0}
-                max={Math.max(1, duration)}
-                value={Math.min(progress, duration || 0)}
-                onChange={(e) => { const t = Number(e.target.value); setProgress(t); if (audioRef.current) audioRef.current.currentTime = t }}
-                className="w-full accent-primary"
-              />
+              <input type="range" min={0} max={Math.max(1, duration)} value={Math.min(progress, duration || 0)} onChange={(e) => { const t = Number(e.target.value); setProgress(t); if (audioRef.current) audioRef.current.currentTime = t }} className="w-full accent-primary" />
               <span className="text-[11px] text-neutral-400 w-10">{fmtTime(duration)}</span>
             </div>
           </div>
-
-          {/* Volume */}
           <div className="hidden md:flex items-center gap-2 w-48 justify-end">
-            <button className="p-2 rounded hover:bg-neutral-800" onClick={() => setVolume(v => v > 0 ? 0 : 0.8)} aria-label="Mute">
-              {volume > 0 ? <Volume2 size={18}/> : <VolumeX size={18}/>}
-            </button>
+            <button className="p-2 rounded hover:bg-neutral-800" onClick={() => setVolume(v => v > 0 ? 0 : 0.8)} aria-label="Mute">{volume > 0 ? <Volume2 size={18}/> : <VolumeX size={18}/>} </button>
             <input type="range" min={0} max={1} step={0.01} value={volume} onChange={(e) => setVolume(Number(e.target.value))} className="w-32 accent-primary" />
           </div>
         </div>
