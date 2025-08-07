@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository for **Celes - Celestial Music Streaming**.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository for **Celes** — named after the FFIX character and reflecting a love of astronomy.
 
 ## Development Commands
 

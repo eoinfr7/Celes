@@ -1,8 +1,8 @@
 # Celes
 
-An open-source, Spotify-like desktop music app built with Electron + React (Vite) + Tailwind. Streams free/open sources (e.g., Internet Archive, YouTube, SoundCloud) without login.
+An open‑source desktop music player named after the FFIX character Celes and inspired by astronomy. Play local files and stream from YouTube and SoundCloud — no login.
 
-<img width="1804" height="974" alt="image" src="https://github.com/user-attachments/assets/f83cda6b-b3fe-48e1-92e5-4832b5939ee0" />
+![Celes screenshot](Celes/assets/screenshots/app.png)
 
 ## Features
 
