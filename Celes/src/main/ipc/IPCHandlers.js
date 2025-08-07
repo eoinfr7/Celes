@@ -350,6 +350,15 @@ class IPCHandlers {
       }
     });
 
+    ipcMain.handle('get-top-charts', async (event, platform, limit) => {
+      try {
+        return await this.streamingService.getTopCharts(platform, limit);
+      } catch (error) {
+        console.error('Error getting top charts:', error);
+        return [];
+      }
+    });
+
     ipcMain.handle('get-artist-tracks', async (event, artistName, limit) => {
       try {
         return await this.streamingService.getArtistTracks(artistName, limit);

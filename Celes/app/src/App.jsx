@@ -53,6 +53,7 @@ export default function App() {
   const [chartsSC, setChartsSC] = useState([])
   const [chartsYT, setChartsYT] = useState([])
   const [homeLoading, setHomeLoading] = useState(false)
+  const [chartsDate, setChartsDate] = useState('')
 
   async function loadHome() {
     setHomeLoading(true)
@@ -60,11 +61,12 @@ export default function App() {
       // Release Radar proxy (uses trending-like queries under the hood)
       const radar = await window.electronAPI.getReleaseRadar?.(24)
       setDailyMix(Array.isArray(radar) ? radar : [])
-      // Simple charts: search common chart terms per platform
-      const yt = await window.electronAPI.searchMusicWithFallback('top hits 2025', 'youtube', 18)
+      // Top charts (Top 50)
+      const yt = await window.electronAPI.getTopCharts?.('youtube', 50)
       setChartsYT(yt || [])
-      const sc = await window.electronAPI.searchMusicWithFallback('soundcloud charts', 'soundcloud', 18)
+      const sc = await window.electronAPI.getTopCharts?.('soundcloud', 50)
       setChartsSC(sc || [])
+      setChartsDate(new Date().toLocaleDateString())
     } catch (e) {
       // ignore
     } finally {
@@ -252,9 +254,9 @@ export default function App() {
                 {homeLoading && <div className="text-sm text-neutral-400">Loading mixes…</div>}
                 {!homeLoading && (
                   <>
-                    <SectionCard title="Daily Mix" items={dailyMix} />
-                    <SectionCard title="YouTube Charts" items={chartsYT} />
-                    <SectionCard title="SoundCloud Charts" items={chartsSC} />
+                    <SectionCard title={`Daily Mix • ${chartsDate}`} items={dailyMix} />
+                    <SectionCard title={`YouTube Top 50 • ${chartsDate}`} items={chartsYT} />
+                    <SectionCard title={`SoundCloud Top 50 • ${chartsDate}`} items={chartsSC} />
                   </>
                 )}
               </>
@@ -275,7 +277,18 @@ export default function App() {
                       <div className="flex gap-2">
                         <Button className="mt-1 flex-1" onClick={() => doPlay(t)}>Play</Button>
                         <Button className="mt-1" variant="ghost" onClick={() => addToQueue(t)}>+ Queue</Button>
-                        <Button className="mt-1" variant="ghost" onClick={() => addTrackToPlaylist(activePlaylistId || createPlaylist('My Playlist'), t)}>+ Playlist</Button>
+                        <Button className="mt-1" variant="ghost" onClick={() => {
+                          let pid = activePlaylistId
+                          if (!pid) {
+                            const names = playlists.map((p, i) => `${i+1}. ${p.name}`)
+                            const choice = prompt(`Add to which playlist?\n${names.join('\n')}\nOr type a new name:`)
+                            if (!choice) return
+                            const idx = Number(choice)-1
+                            if (Number.isInteger(idx) && idx >= 0 && idx < playlists.length) pid = playlists[idx].id
+                            else { createPlaylist(choice.trim()); pid = (playlists[playlists.length-1]?.id) }
+                          }
+                          addTrackToPlaylist(pid, t)
+                        }}>+ Playlist</Button>
                       </div>
                     </div>
                   ))}

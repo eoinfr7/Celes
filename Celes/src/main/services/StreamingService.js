@@ -320,6 +320,75 @@ class StreamingService extends BaseStreamingService {
       internetarchive: { name: 'Internet Archive', searchUrl: 'https://archive.org', supportsDirectPay: true }
     };
   }
+
+  // Top charts helpers
+  async getYouTubeTop(limit = 50) {
+    const instances = [
+      'https://pipedapi.kavin.rocks',
+      'https://piped.video',
+      'https://piped.projectsegfau.lt',
+    ];
+    for (const base of instances) {
+      try {
+        const json = await this.doJsonGet(`${base}/trending`, 12000);
+        const items = Array.isArray(json) ? json : (json && (json.items || json.videos)) || [];
+        const results = [];
+        for (const it of items) {
+          const vid = it.id || it.url || it.videoId || null;
+          const id = typeof vid === 'string' && vid.length === 11 ? vid : (it?.url?.split('watch?v=')[1] || null);
+          if (!id) continue;
+          results.push({
+            id,
+            title: it.title || 'YouTube',
+            artist: it.uploaderName || it.uploader || 'YouTube',
+            duration: Number(it.duration) || 0,
+            thumbnail: it.thumbnail || (it.thumbnails && it.thumbnails[0]) || '',
+            url: `https://www.youtube.com/watch?v=${id}`,
+            platform: 'youtube',
+            type: 'stream',
+            streamUrl: null,
+            album: 'YouTube Music',
+            year: new Date().getFullYear(),
+          });
+          if (results.length >= limit) break;
+        }
+        if (results.length) return results;
+      } catch { /* try next instance */ }
+    }
+    // Fallback: broad trending queries
+    const fallbacks = ['top hits', 'trending songs', 'hot 50 songs', 'music chart'];
+    for (const q of fallbacks) {
+      try {
+        const r = await this.searchYouTubePiped(q, limit);
+        if (r && r.length) return r.slice(0, limit);
+      } catch { /* next */ }
+    }
+    return [];
+  }
+
+  async getSoundCloudTop(limit = 50) {
+    // Heuristic: run a few popular queries and merge unique
+    const queries = ['soundcloud top 50', 'charts', 'popular tracks', 'hot 100'];
+    const seen = new Set();
+    const out = [];
+    for (const q of queries) {
+      try {
+        const res = await super.searchMusic(q, 'soundcloud', limit);
+        for (const t of res || []) {
+          const key = `${t.platform}:${t.id}`;
+          if (!seen.has(key)) { seen.add(key); out.push(t); if (out.length >= limit) break; }
+        }
+        if (out.length >= limit) break;
+      } catch { /* continue */ }
+    }
+    return out.slice(0, limit);
+  }
+
+  async getTopCharts(platform = 'youtube', limit = 50) {
+    if (platform === 'youtube') return this.getYouTubeTop(limit);
+    if (platform === 'soundcloud') return this.getSoundCloudTop(limit);
+    return [];
+  }
 }
 
 module.exports = StreamingService;
