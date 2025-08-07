@@ -5,9 +5,12 @@
 :root{
   --primary: 221.2 83.2% 53.3%;
   --primary-foreground: 210 40% 98%;
+  --background: 0 0% 4%;
+  --foreground: 0 0% 100%;
 }
 
 body{ margin:0; }
+body{ background-color: hsl(var(--background)); color: hsl(var(--foreground)); }
 .line-clamp-2{
   display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
 }

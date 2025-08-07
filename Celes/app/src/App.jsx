@@ -247,6 +247,58 @@ export default function App() {
     </div>
   )
 
+  const [themeOpen, setThemeOpen] = useState(false)
+
+  function applyThemeVars(vars) {
+    const root = document.documentElement
+    Object.entries(vars).forEach(([k,v]) => root.style.setProperty(k, v))
+  }
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('celes.theme') || 'null')
+      if (saved) applyThemeVars(saved)
+    } catch {}
+  }, [])
+
+  function ThemePanel() {
+    const [primary, setPrimary] = useState(getComputedStyle(document.documentElement).getPropertyValue('--primary'))
+    const [bg, setBg] = useState(getComputedStyle(document.documentElement).getPropertyValue('--bg') || '0 0% 4%')
+    const [fg, setFg] = useState(getComputedStyle(document.documentElement).getPropertyValue('--fg') || '0 0% 100%')
+
+    const save = () => {
+      const vars = { '--primary': primary.trim(), '--background': bg.trim(), '--foreground': fg.trim() }
+      applyThemeVars(vars)
+      try { localStorage.setItem('celes.theme', JSON.stringify(vars)) } catch {}
+      setThemeOpen(false)
+    }
+
+    return (
+      <div className="fixed right-4 top-16 z-50 bg-neutral-900 border border-neutral-800 rounded p-3 w-80 shadow-xl">
+        <div className="text-sm font-semibold mb-2">Theme</div>
+        <div className="space-y-2 text-xs">
+          <div>
+            <div className="mb-1">Primary (H S L)</div>
+            <input className="w-full bg-neutral-950 border border-neutral-800 rounded px-2 py-1" value={primary} onChange={(e)=>setPrimary(e.target.value)} />
+          </div>
+          <div>
+            <div className="mb-1">Background (H S L)</div>
+            <input className="w-full bg-neutral-950 border border-neutral-800 rounded px-2 py-1" value={bg} onChange={(e)=>setBg(e.target.value)} />
+          </div>
+          <div>
+            <div className="mb-1">Foreground (H S L)</div>
+            <input className="w-full bg-neutral-950 border border-neutral-800 rounded px-2 py-1" value={fg} onChange={(e)=>setFg(e.target.value)} />
+          </div>
+          <div className="flex gap-2 pt-1">
+            <Button onClick={save}>Save</Button>
+            <Button variant="ghost" onClick={()=>setThemeOpen(false)}>Close</Button>
+          </div>
+          <div className="pt-2 text-neutral-400">Tip: try values like “221.2 83.2% 53.3%”</div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 flex">
       <Sidebar onSelect={setView} />
@@ -256,6 +308,7 @@ export default function App() {
             <input className="bg-transparent outline-none text-sm w-full" placeholder="Ask for any song, artist, mood…" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') doSearch() }} />
             <Button onClick={doSearch} disabled={loading}>{loading ? 'Searching…' : 'Search'}</Button>
           </div>
+          <Button variant="ghost" onClick={()=>setThemeOpen(v=>!v)}>Theme</Button>
           <div className="md:hidden flex-1" />
         </header>
 
@@ -379,6 +432,7 @@ export default function App() {
           </aside>
         </main>
       </div>
+      {themeOpen && <ThemePanel />}
       <div className="fixed bottom-0 left-0 right-0 border-t border-neutral-800 bg-neutral-950/90 backdrop-blur supports-[backdrop-filter]:bg-neutral-950/60">
         <div className="mx-auto max-w-screen-2xl px-4 h-20 flex items-center gap-4">
           <div className="flex items-center gap-3 min-w-0">
