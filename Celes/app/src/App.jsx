@@ -76,8 +76,8 @@ export default function App() {
     if (!query.trim()) return
     setLoading(true)
     try {
-      // Default to SoundCloud with fallback to Internet Archive
-      const res = await window.electronAPI.searchMusicWithFallback(query, 'soundcloud', 24)
+      // Default to YouTube with fallback to SoundCloud/Internet Archive for better hit rate
+      const res = await window.electronAPI.searchMusicWithFallback(query, 'youtube', 24)
       setResults(res || [])
     } finally {
       setLoading(false)
