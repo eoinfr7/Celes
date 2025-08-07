@@ -42,7 +42,7 @@ An open-source, Spotify-like desktop music app built with Electron + React (Vite
 ### Setup
 ```bash
 # Clone the repository
-git clone https://github.com/eoinfr/Celes-Player
+git clone https://github.com/eoinfr7/Celes.git
 cd Celes
 
 # Install dependencies
@@ -90,7 +90,7 @@ npm run build:linux
 ## Technology Stack
 
 - **Electron** - Cross-platform desktop framework
-- **Better-SQLite3** - Local database for music metadata
+- **SQLite3** - Local database for music metadata
 - **Node.js** - Backend runtime
 - **HTML/CSS/JavaScript** - Frontend interface
 - **Lucide Icons** - Clean, minimal iconography
