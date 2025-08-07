@@ -1,6 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX } from 'lucide-react'
 
+const THEMES = [
+  { name: 'Midnight', vars: { '--primary': '221.2 83.2% 53.3%', '--background': '0 0% 4%', '--foreground': '0 0% 100%' } },
+  { name: 'Nord', vars: { '--primary': '210 34% 63%', '--background': '220 16% 16%', '--foreground': '220 14% 96%' } },
+  { name: 'Dracula', vars: { '--primary': '265 89% 78%', '--background': '231 15% 18%', '--foreground': '60 30% 96%' } },
+  { name: 'Solarized', vars: { '--primary': '186 72% 42%', '--background': '195 22% 17%', '--foreground': '44 55% 80%' } },
+  { name: 'Neon', vars: { '--primary': '160 100% 45%', '--background': '240 10% 6%', '--foreground': '0 0% 100%' } },
+  { name: 'Tumblr', vars: { '--primary': '210 50% 50%', '--background': '220 25% 12%', '--foreground': '210 40% 95%' } },
+]
+
 function Button({ className = '', variant = 'primary', ...props }) {
   const base = 'inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 h-9 px-4 py-2'
   const styles = variant === 'ghost'
@@ -263,8 +272,19 @@ export default function App() {
 
   function ThemePanel() {
     const [primary, setPrimary] = useState(getComputedStyle(document.documentElement).getPropertyValue('--primary'))
-    const [bg, setBg] = useState(getComputedStyle(document.documentElement).getPropertyValue('--bg') || '0 0% 4%')
-    const [fg, setFg] = useState(getComputedStyle(document.documentElement).getPropertyValue('--fg') || '0 0% 100%')
+    const [bg, setBg] = useState(getComputedStyle(document.documentElement).getPropertyValue('--background') || '0 0% 4%')
+    const [fg, setFg] = useState(getComputedStyle(document.documentElement).getPropertyValue('--foreground') || '0 0% 100%')
+    const [preset, setPreset] = useState('')
+
+    const onPreset = (val) => {
+      setPreset(val)
+      const t = THEMES.find(x => x.name === val)
+      if (t) {
+        setPrimary(t.vars['--primary'])
+        setBg(t.vars['--background'])
+        setFg(t.vars['--foreground'])
+      }
+    }
 
     const save = () => {
       const vars = { '--primary': primary.trim(), '--background': bg.trim(), '--foreground': fg.trim() }
@@ -277,6 +297,13 @@ export default function App() {
       <div className="fixed right-4 top-16 z-50 bg-neutral-900 border border-neutral-800 rounded p-3 w-80 shadow-xl">
         <div className="text-sm font-semibold mb-2">Theme</div>
         <div className="space-y-2 text-xs">
+          <div>
+            <div className="mb-1">Preset</div>
+            <select className="w-full bg-neutral-950 border border-neutral-800 rounded px-2 py-1" value={preset} onChange={(e)=>onPreset(e.target.value)}>
+              <option value="">Custom…</option>
+              {THEMES.map(t => <option key={t.name} value={t.name}>{t.name}</option>)}
+            </select>
+          </div>
           <div>
             <div className="mb-1">Primary (H S L)</div>
             <input className="w-full bg-neutral-950 border border-neutral-800 rounded px-2 py-1" value={primary} onChange={(e)=>setPrimary(e.target.value)} />
@@ -293,7 +320,7 @@ export default function App() {
             <Button onClick={save}>Save</Button>
             <Button variant="ghost" onClick={()=>setThemeOpen(false)}>Close</Button>
           </div>
-          <div className="pt-2 text-neutral-400">Tip: try values like “221.2 83.2% 53.3%”</div>
+          <div className="pt-2 text-neutral-400">Tip: presets change HSL variables globally.</div>
         </div>
       </div>
     )
