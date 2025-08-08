@@ -5,7 +5,7 @@ Play the internet your way. Celes pairs a drop‑dead‑gorgeous interface with 
 <p align="center">
   <img alt="Celes hero" src="docs/hero.gif" width="820" />
   <br/>
-  <img alt="Celes screenshot" src="docs/screenshot.png" width="820" />
+<img width="1710" height="1069" alt="Screenshot 2025-08-08 at 5 59 25 AM" src="https://github.com/user-attachments/assets/86d32106-1941-476c-af6b-2c6cbd999cba" />
   <br/>
   <sub>Explore, queue, and fall into the music. (GIF/screenshot here)</sub>
   <br/>
