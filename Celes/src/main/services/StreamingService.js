@@ -601,8 +601,8 @@ class StreamingService extends BaseStreamingService {
     const tried = new Set();
     const tryOrder = [];
     if (primaryPlatform) tryOrder.push(primaryPlatform);
-    // Prefer large catalog first, then SC, then IA
-    ['youtube', 'soundcloud', 'internetarchive'].forEach(p => { if (!tryOrder.includes(p)) tryOrder.push(p); });
+    // Exclude SoundCloud for reliability; fall back to Internet Archive only
+    ['youtube', 'internetarchive'].forEach(p => { if (!tryOrder.includes(p)) tryOrder.push(p); });
 
     let lastError = null;
     for (const platform of tryOrder) {
