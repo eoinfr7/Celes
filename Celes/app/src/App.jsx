@@ -437,7 +437,7 @@ export default function App() {
   useEffect(() => { if (currentTrack) applyNormalizationForTrack(currentTrack) }, [normalizeOn, targetLufs])
   useEffect(() => {
     setParsedLrc([]); parsedLrcRef.current=[]; setActiveLrcIdx(-1); activeLrcIdxRef.current=-1; setMiniLyric('')
-    if (!currentTrack || !lyricsEnabled) return
+    try { if (!currentTrack || !lyricsEnabled) return } catch { return }
     ;(async()=>{
       try {
         const meta = { artist: currentTrack.artist, title: currentTrack.title, duration: currentTrack.duration }
@@ -739,21 +739,7 @@ export default function App() {
     )
   }
 
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  const [lyricsOpen, setLyricsOpen] = useState(false)
-  const [lyricsData, setLyricsData] = useState(null)
-  const [parsedLrc, setParsedLrc] = useState([])
-  const [activeLrcIdx, setActiveLrcIdx] = useState(-1)
-  const parsedLrcRef = useRef([])
-  const activeLrcIdxRef = useRef(-1)
-  const [miniLyric, setMiniLyric] = useState('')
-  const [lyricsEnabled, setLyricsEnabled] = useState(()=>{ try { const v = localStorage.getItem('celes.lyricsEnabled'); return v==null? true : v==='true' } catch { return true } })
-  const [autoOpenLyrics, setAutoOpenLyrics] = useState(()=>{ try { const v = localStorage.getItem('celes.autoOpenLyrics'); return v==='true' } catch { return false } })
-  const [showMiniLyric, setShowMiniLyric] = useState(()=>{ try { const v = localStorage.getItem('celes.showMiniLyric'); return v==null? true : v==='true' } catch { return true } })
-  const [autoDownloadLiked, setAutoDownloadLiked] = useState(false)
-  const [downloadDir, setDownloadDir] = useState('')
-  const [playlistDl, setPlaylistDl] = useState({}) // { [playlistId]: { total, done, currentPercent } }
-  const playlistDlRef = useRef(new Map()) // pid -> { keys:Set, total, done }
+  
 
   useEffect(()=>{ (async()=>{ try { const s = await window.electronAPI.getSettings?.(); if(s){ if(s.autoDownloadLiked!=null) setAutoDownloadLiked(!!s.autoDownloadLiked); if(s.downloadDir) setDownloadDir(s.downloadDir) } } catch {} })() }, [])
   async function persistSettings(next){ try { await window.electronAPI.saveSettings?.(next) } catch {} }
