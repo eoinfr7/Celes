@@ -449,7 +449,67 @@ class StreamingService extends BaseStreamingService {
         if (cachePath) { try { fs.writeFileSync(cachePath, JSON.stringify(lrclib, null, 2)); } catch {} }
         return lrclib;
       }
+      // Fallbacks: Genius → AZLyrics (plain lyrics)
+      const genius = await this.searchGeniusLyrics(artist, title).catch(()=>null);
+      if (genius) { if (cachePath) { try { fs.writeFileSync(cachePath, JSON.stringify(genius, null, 2)); } catch {} } return genius }
+      const az = await this.searchAzLyrics(artist, title).catch(()=>null);
+      if (az) { if (cachePath) { try { fs.writeFileSync(cachePath, JSON.stringify(az, null, 2)); } catch {} } return az }
       return null;
+    } catch { return null; }
+  }
+
+  // --- Additional lyric sources ---
+  stripHtml(html) {
+    try {
+      return String(html||'')
+        .replace(/<\s*br\s*\/?>/gi, '\n')
+        .replace(/<\s*\/p\s*>/gi, '\n')
+        .replace(/<[^>]+>/g, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+    } catch { return '' }
+  }
+
+  async searchGeniusLyrics(artist, title) {
+    try {
+      const q = encodeURIComponent(`${artist} ${title}`.trim());
+      const searchHtml = await this.fetchText(`https://genius.com/search?q=${q}`, 12000).catch(()=>null);
+      if (!searchHtml) return null;
+      const m = searchHtml.match(/href="(https:\/\/genius\.com\/[^"#]+-lyrics)"/i);
+      const url = m && m[1] ? m[1] : null;
+      if (!url) return null;
+      const page = await this.fetchText(url, 12000).catch(()=>null);
+      if (!page) return null;
+      // Collect all data-lyrics-container blocks
+      const blocks = [...page.matchAll(/<div[^>]+data-lyrics-container="true"[^>]*>([\s\S]*?)<\/div>/gi)].map(x=>x[1]).filter(Boolean);
+      if (blocks.length === 0) return null;
+      const joined = blocks.map(b=>this.stripHtml(b)).join('\n');
+      const plainLyrics = joined.trim();
+      if (!plainLyrics) return null;
+      return { source: 'genius', syncedLyrics: null, plainLyrics, trackName: title, artistName: artist, duration: null };
+    } catch { return null; }
+  }
+
+  async searchAzLyrics(artist, title) {
+    try {
+      // Use DuckDuckGo to find azlyrics URL
+      const q = encodeURIComponent(`site:azlyrics.com ${artist} ${title}`);
+      const ddg = await this.fetchText(`https://duckduckgo.com/html/?q=${q}`, 12000).catch(()=>null);
+      let url = null;
+      if (ddg) {
+        const m = ddg.match(/https?:\/\/(www\.)?azlyrics\.com\/lyrics\/[^"]+/i);
+        if (m) url = m[0];
+      }
+      if (!url) return null;
+      const html = await this.fetchText(url, 12000).catch(()=>null);
+      if (!html) return null;
+      // Lyrics block usually between the usage comment and next div
+      const mBlock = html.match(/Usage of azlyrics[\s\S]*?<\/div>\s*<div[^>]*>([\s\S]*?)<\/div>\s*<div/i) || html.match(/<!--\s*Usage of azlyrics[\s\S]*?-->([\s\S]*?)<div/i);
+      const raw = mBlock && mBlock[1] ? mBlock[1] : null;
+      if (!raw) return null;
+      const plainLyrics = this.stripHtml(raw);
+      if (!plainLyrics) return null;
+      return { source: 'azlyrics', syncedLyrics: null, plainLyrics, trackName: title, artistName: artist, duration: null };
     } catch { return null; }
   }
 
