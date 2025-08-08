@@ -238,8 +238,15 @@ class MusicPlayerApp {
         
         if (!originalUrl) throw new Error('Stream URL not found');
 
-        // Forward method and headers (e.g., Range) to the upstream
-        const init = { method: request.method, headers: request.headers };
+        // Forward method and headers (e.g., Range) to the upstream, enforce media-friendly UA and referer
+        const forwarded = Object.assign({}, request.headers || {});
+        if (!forwarded['user-agent']) forwarded['user-agent'] = 'Mozilla/5.0 (Macintosh; Intel Mac OS X) AppleWebKit/537.36 (KHTML, like Gecko) Celes/1.0';
+        // Help googlevideo/compliance servers
+        if (/googlevideo|youtube|ytimg/.test(originalUrl)) {
+          forwarded.referer = forwarded.referer || 'https://www.youtube.com/';
+          forwarded.origin = forwarded.origin || 'https://www.youtube.com';
+        }
+        const init = { method: request.method, headers: forwarded };
         const response = await net.fetch(originalUrl, init);
 
         if (!response || !response.ok) {

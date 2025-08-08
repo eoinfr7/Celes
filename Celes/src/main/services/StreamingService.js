@@ -156,7 +156,11 @@ class StreamingService extends BaseStreamingService {
           return (Number(b.bitrate) || Number(b.quality) || 0) - (Number(a.bitrate) || Number(a.quality) || 0);
         });
         const best = sorted[0];
-        if (best && (best.url || best.link)) return best.url || best.link;
+        if (best && (best.url || best.link)) {
+          // Some instances return relative link components; ensure absolute
+          const link = best.url || best.link;
+          return link.startsWith('http') ? link : `${base}${link}`;
+        }
       } catch {
         // try next instance
       }
