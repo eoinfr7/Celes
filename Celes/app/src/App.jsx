@@ -511,6 +511,18 @@ export default function App() {
 
   useEffect(() => { try { localStorage.setItem('celes.volume', String(volume)) } catch {} ; try { if (audioRef.current) audioRef.current.volume = volume } catch {}; try { if (nextAudioRef.current) nextAudioRef.current.volume = volume } catch {} }, [volume])
   useEffect(() => { window.electronAPI.streamingHealthCheck?.() }, [])
+  useEffect(() => {
+    const onCmd = (_payload) => {
+      const payload = _payload?.detail ? _payload.detail : _payload
+      try {
+        if (!payload || typeof payload !== 'object') return
+        if (payload.type === 'toggle-play') { togglePlayPause() }
+        if (payload.type === 'next') { nextFromQueue() }
+        if (payload.type === 'previous') { /* optional: implement */ }
+      } catch {}
+    }
+    window.electronAPI?.onRendererCommand?.(onCmd)
+  }, [])
   useEffect(() => { if (currentTrack) applyNormalizationForTrack(currentTrack) }, [normalizeOn, targetLufs])
   useEffect(() => {
     setParsedLrc([]); parsedLrcRef.current=[]; setActiveLrcIdx(-1); activeLrcIdxRef.current=-1; setMiniLyric('')

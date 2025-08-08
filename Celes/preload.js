@@ -112,6 +112,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   importPlaylistUrl: (url) => ipcRenderer.invoke('import-playlist-url', url),
   getLyricsForTrack: (meta) => ipcRenderer.invoke('get-lyrics-for-track', meta),
   getYouTubeVideoStream: (videoId) => ipcRenderer.invoke('get-youtube-video-stream', videoId),
+  // Mini/renderer control bridge
+  sendRendererCommand: (cmd, args) => ipcRenderer.invoke('renderer-command', cmd, args),
+  reportNowPlaying: (data) => ipcRenderer.send('report-now-playing', data),
+  onMiniNowPlaying: (cb) => ipcRenderer.on('mini-now-playing', (_e, data)=> cb?.(data)),
+  onRendererCommand: (cb) => ipcRenderer.on('renderer-command', (_e, payload)=> cb?.(payload)),
   getSimilarTracks: (trackId, platform, limit) => ipcRenderer.invoke('get-similar-tracks', trackId, platform, limit),
   followArtistStreaming: (artistName) => ipcRenderer.invoke('follow-artist-streaming', artistName),
   unfollowArtistStreaming: (artistName) => ipcRenderer.invoke('unfollow-artist-streaming', artistName),

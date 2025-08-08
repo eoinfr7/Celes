@@ -221,7 +221,7 @@ class IPCHandlers {
 
     // Mini player
     ipcMain.handle('open-mini-player', () => {
-      try { this.windowManager.createMiniPlayerWindow(); return { success: true }; } catch (e) { return { success: false, error: e.message } }
+      try { this.windowManager?.createMiniPlayerWindow?.(); return { success: true }; } catch (e) { return { success: false, error: e.message } }
     });
     ipcMain.handle('close-mini-player', () => {
       try { this.windowManager.closeMiniPlayerWindow(); return { success: true }; } catch (e) { return { success: false, error: e.message } }
@@ -678,6 +678,12 @@ class IPCHandlers {
     });
 
     // Playback control
+    ipcMain.handle('toggle-play', async () => {
+      try {
+        this.mainWindow.webContents.send('renderer-command', { type: 'toggle-play' });
+        return { success: true };
+      } catch (error) { return { success:false, error: error.message } }
+    });
     ipcMain.handle('start-streaming', async (event, streamUrl) => {
       try {
         await this.streamingService.startStreaming(streamUrl);
