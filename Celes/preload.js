@@ -95,6 +95,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   downloadTrack: (track, targetDir) => ipcRenderer.invoke('download-track', track, targetDir),
   getDownloads: () => ipcRenderer.invoke('get-downloads'),
   deleteDownload: (downloadId, removeFile) => ipcRenderer.invoke('delete-download', downloadId, removeFile),
+  // Download queue controls
+  downloadQueueAdd: (items, targetDir) => ipcRenderer.invoke('download-queue-add', items, targetDir),
+  downloadQueueStatus: () => ipcRenderer.invoke('download-queue-status'),
+  downloadQueuePause: () => ipcRenderer.invoke('download-queue-pause'),
+  downloadQueueResume: () => ipcRenderer.invoke('download-queue-resume'),
+  downloadQueueCancel: () => ipcRenderer.invoke('download-queue-cancel'),
+  onDownloadProgress: (cb) => ipcRenderer.on('download-progress', (_e, data)=> cb?.(data)),
   getTrackInfo: (trackId, platform) => ipcRenderer.invoke('get-track-info', trackId, platform),
   getTrackLoudness: (trackId, platform, options) => ipcRenderer.invoke('get-track-loudness', trackId, platform, options),
   getReleaseRadar: (limit) => ipcRenderer.invoke('get-release-radar', limit),

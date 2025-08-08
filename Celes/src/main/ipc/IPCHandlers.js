@@ -9,6 +9,10 @@ class IPCHandlers {
     this.overlayService = overlayService;
     this.updateService = updateService;
     this.streamingService = streamingService;
+    // Downloads queue
+    this.downloadQueue = [];
+    this.downloadPaused = false;
+    this.currentDownload = null; // { controller, track, targetDir, written, total, filePath }
   }
 
   setupHandlers() {
@@ -512,6 +516,81 @@ class IPCHandlers {
         return { error: error.message };
       }
     });
+
+    // Download queue
+    const safeName = (s)=> String(s||'').replace(/[^a-z0-9\-_. ]+/gi,'').slice(0,80);
+    const getDefaultDownloadDir = () => {
+      try {
+        const s = this.trayService?.settingsManager?.loadSettings?.();
+        return (s && s.downloadDir) || require('os').homedir();
+      } catch { return require('os').homedir(); }
+    };
+
+    const processNext = async () => {
+      if (this.downloadPaused || this.currentDownload || this.downloadQueue.length===0) return;
+      const job = this.downloadQueue.shift();
+      if (!job) return;
+      const { track, targetDir } = job;
+      const dir = targetDir || getDefaultDownloadDir();
+      const { net } = require('electron');
+      const fs = require('fs');
+      const path = require('path');
+      try {
+        const res = await this.streamingService.getStreamUrlWithFallback(track.id, track.platform||'youtube');
+        const toProxy = (u)=> `celes-stream://proxy?u=${encodeURIComponent(u)}`;
+        const finalUrl = toProxy(res?.streamUrl || track.streamUrl);
+        if (!finalUrl) throw new Error('No stream URL');
+        const controller = new AbortController();
+        const response = await net.fetch(finalUrl, { signal: controller.signal });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const total = Number(response.headers.get('content-length')) || null;
+        const filePath = path.join(dir, `${safeName(track.artist)} - ${safeName(track.title)}.m4a`);
+        const file = fs.createWriteStream(filePath);
+        const reader = response.body.getReader();
+        this.currentDownload = { controller, track, targetDir: dir, written: 0, total, filePath };
+        const send = (payload)=>{ try { this.mainWindow?.webContents?.send('download-progress', payload) } catch {} };
+        send({ state:'start', track, total, filePath });
+        while (true) {
+          if (this.downloadPaused) { await new Promise(r=>setTimeout(r,200)); continue; }
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) { file.write(Buffer.from(value)); this.currentDownload.written += value.length; send({ state:'progress', written: this.currentDownload.written, total, track }); }
+        }
+        file.end();
+        // record in DB
+        try {
+          const idRow = this.database.db.prepare('SELECT id FROM songs WHERE stream_id = ? AND platform = ?').get(String(track.stream_id||track.id), track.platform||'youtube');
+          if (idRow && idRow.id) {
+            this.database.db.prepare('INSERT OR REPLACE INTO downloads (song_id, file_path, bytes, content_type) VALUES (?, ?, ?, ?)').run(idRow.id, filePath, this.currentDownload.written, response.headers.get('content-type')||null);
+          }
+        } catch {}
+        send({ state:'done', filePath, track });
+      } catch (error) {
+        try { this.mainWindow?.webContents?.send('download-progress', { state:'error', error: error.message, track }) } catch {}
+      } finally {
+        this.currentDownload = null;
+        setImmediate(processNext);
+      }
+    };
+
+    ipcMain.handle('download-queue-add', async (event, items, targetDir) => {
+      try {
+        const list = Array.isArray(items) ? items : [items];
+        for (const t of list) this.downloadQueue.push({ track: t, targetDir });
+        setImmediate(processNext);
+        return { success:true, queued: list.length };
+      } catch (e) { return { success:false, error:e.message } }
+    });
+    ipcMain.handle('download-queue-status', async () => {
+      return {
+        paused: this.downloadPaused,
+        queueLength: this.downloadQueue.length,
+        current: this.currentDownload ? { track: this.currentDownload.track, written: this.currentDownload.written, total: this.currentDownload.total, filePath: this.currentDownload.filePath } : null
+      };
+    });
+    ipcMain.handle('download-queue-pause', async () => { this.downloadPaused = true; return { success:true } });
+    ipcMain.handle('download-queue-resume', async () => { this.downloadPaused = false; setImmediate(processNext); return { success:true } });
+    ipcMain.handle('download-queue-cancel', async () => { try { this.currentDownload?.controller?.abort(); } catch {} this.currentDownload=null; return { success:true } });
 
     ipcMain.handle('get-downloads', async () => {
       try { return await this.database.getDownloads(); } catch (e) { return [] }
