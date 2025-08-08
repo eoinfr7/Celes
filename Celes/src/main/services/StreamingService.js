@@ -9,6 +9,7 @@ class StreamingService extends BaseStreamingService {
     super();
     // Default: do NOT cross-platform fallback for streams to avoid mismatched audio sources
     this.fallbackEnabled = false;
+    if (!this.searchCache) this.searchCache = new Map();
   }
 
   findCachedTrack(trackId) {
@@ -278,12 +279,25 @@ class StreamingService extends BaseStreamingService {
 
     // Prefer Piped for stable YouTube search
     if (platform === 'youtube') {
+      const cacheKey = `${platform}:${query}:${limit}`;
+      if (this.searchCache && this.searchCache.has(cacheKey)) {
+        const cached = this.searchCache.get(cacheKey);
+        if (Date.now() - cached.timestamp < 300000) return cached.results;
+      }
       try {
         const results = await this.searchYouTubePiped(query, limit);
-        if (results && results.length) return results;
+        if (results && results.length) {
+          if (this.searchCache) this.searchCache.set(cacheKey, { results, timestamp: Date.now() });
+          return results;
+        }
       } catch {
         // fall back to base search
       }
+      try {
+        const results = await super.searchMusic(query, platform, limit);
+        if (this.searchCache) this.searchCache.set(cacheKey, { results: results || [], timestamp: Date.now() });
+        return results;
+      } catch {}
     }
 
     return super.searchMusic(query, platform, limit);

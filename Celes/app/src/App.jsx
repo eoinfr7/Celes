@@ -321,6 +321,7 @@ export default function App() {
   const [chartsYT, setChartsYT] = useState([]) // deprecated; retained only to avoid crashes if referenced
   const [followedFeed, setFollowedFeed] = useState([])
   const [explore, setExplore] = useState(null)
+  const [exploreHistory, setExploreHistory] = useState([])
   const [homeLoading, setHomeLoading] = useState(false)
   const [chartsDate, setChartsDate] = useState('')
 
@@ -330,6 +331,8 @@ export default function App() {
       setDailyMix([])
       const ex = await window.electronAPI.getExploreSections?.()
       setExplore(ex || {})
+      const hist = await window.electronAPI.getSearchHistory?.()
+      setExploreHistory(Array.isArray(hist)? hist: [])
       setChartsSC([])
       setFollowedFeed([])
       setChartsDate(new Date().toLocaleDateString())
@@ -1016,6 +1019,9 @@ export default function App() {
                       <SectionCard title={`Hip‑Hop`} items={explore.hiphop||[]} />
                       <SectionCard title={`Pop`} items={explore.pop||[]} />
                       <SectionCard title={`Indie`} items={explore.indie||[]} />
+                      {exploreHistory.map((b, i)=> (
+                        <SectionCard key={`hist_${i}`} title={`From your searches: ${b.query}`} items={b.results||[]} />
+                      ))}
                     </>
                   )}
                   {!explore && <div className="text-sm text-muted-foreground">Loading explore…</div>}

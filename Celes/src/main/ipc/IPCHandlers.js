@@ -407,6 +407,24 @@ class IPCHandlers {
       }
     });
 
+    ipcMain.handle('get-search-history', async () => {
+      try {
+        const cache = this.streamingService.searchCache || new Map();
+        const out = [];
+        for (const [key, entry] of cache.entries()) {
+          try {
+            const [platform, query] = (key || '').split(':').slice(0,2);
+            if (platform === 'youtube' && query && entry && Array.isArray(entry.results)) {
+              out.push({ query, results: entry.results.slice(0, 12) });
+            }
+          } catch {}
+        }
+        return out.slice(-10); // latest ~10 buckets
+      } catch (e) {
+        return [];
+      }
+    });
+
     ipcMain.handle('get-artist-tracks', async (event, artistName, limit) => {
       try {
         return await this.streamingService.getArtistTracks(artistName, limit);
