@@ -336,6 +336,7 @@ export default function App() {
   }
 
   async function doSearch() {
+    setView('search')
     if (!query.trim()) return
     setLoading(true)
     try {
@@ -999,7 +1000,7 @@ export default function App() {
                         <div className="h-3 mt-1 w-1/2 bg-surface-muted rounded" />
                       </div>
                     ))}
-                  </div>
+              </div>
                 )}
                 {!homeLoading && (<>
                   <SectionCard title={`YouTube Top 50 • ${chartsDate}`} items={chartsYT} />
@@ -1060,10 +1061,10 @@ export default function App() {
                           }
                           await addTrackToDbPlaylist(pid, t)
                         }}>+ Playlist</Button>
-                      </div>
-                    </div>
-                  ))}
+                  </div>
                 </div>
+              ))}
+            </div>
               </>
             )}
             {/* Artist view removed */}
