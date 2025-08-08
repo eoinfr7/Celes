@@ -64,6 +64,11 @@ export default function App() {
     try { return JSON.parse(localStorage.getItem('celes.playlistCovers') || '{}') } catch { return {} }
   })
   const saveCovers = (next) => { setPlaylistCovers(next); try { localStorage.setItem('celes.playlistCovers', JSON.stringify(next)) } catch {} }
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [pickerTrack, setPickerTrack] = useState(null)
+  const [renameOpen, setRenameOpen] = useState(false)
+  const [renameTarget, setRenameTarget] = useState(null) // { id, name }
+  const [newPlaylistOpen, setNewPlaylistOpen] = useState(false)
 
   const [currentTrack, setCurrentTrack] = useState(null)
   const [likedSet, setLikedSet] = useState(()=>{ try { return new Set(JSON.parse(localStorage.getItem('celes.likedSet')||'[]')) } catch { return new Set() } })
@@ -398,6 +403,7 @@ export default function App() {
   function addToQueue(track) { setQueue((q) => [...q, track]) }
   function playNext(track) { setQueue((q) => [track, ...q]) }
   function removeFromQueue(idx) { setQueue((q) => q.filter((_, i) => i !== idx)) }
+  function openPlaylistPickerForTrack(track){ setPickerTrack(track); setPickerOpen(true) }
 
   async function persistTrack(track) {
     try {
@@ -680,18 +686,7 @@ export default function App() {
               <span className="flex items-center gap-2 ml-2">
                 <button className="p-1 hover:text-primary" title="Add to queue" onClick={() => addToQueue(t)}><ListPlus size={16}/></button>
                 <button className={`p-1 ${likedSet.has(keyForTrack(t))? 'text-primary' : 'hover:text-primary'}`} aria-label="Like" title="Like" onClick={async () => { const id = await persistTrack(t); if (id) { const res = await window.electronAPI.toggleLikeSong?.(id); const isLiked = !!res?.isLiked; setLikedSet(prev=>{ const next = new Set(Array.from(prev)); const k=keyForTrack(t); if (isLiked) next.add(k); else next.delete(k); try{ localStorage.setItem('celes.likedSet', JSON.stringify(Array.from(next))) }catch{}; return next }); await reloadPlaylists(); } }}><Heart size={16}/></button>
-                <button className="p-1 hover:text-primary" title="Add to playlist" onClick={async () => {
-                  let pid = activePlaylistId
-                  if (!pid || !playlists.find(p=>p.id===pid)) {
-                    const names = playlists.map((p, i) => `${i+1}. ${p.name}`)
-                   const choice = window.prompt?.(`Add to which playlist?\n${names.join('\n')}\nOr type a new name:`)
-                    if (!choice) return
-                    const idx = Number(choice)-1
-                    if (Number.isInteger(idx) && idx >= 0 && idx < playlists.length) pid = playlists[idx].id
-                    else { await createPlaylist(choice.trim()); pid = playlists[playlists.length-1]?.id }
-                  }
-                  await addTrackToDbPlaylist(pid, t)
-                }}><Plus size={16}/></button>
+                <button className="p-1 hover:text-primary" title="Add to playlist" onClick={() => openPlaylistPickerForTrack(t)}><Plus size={16}/></button>
               </span>
             </div>
           </div>
@@ -804,6 +799,42 @@ export default function App() {
             <Button variant="ghost" onClick={()=>setThemeOpen(false)}>Close</Button>
           </div>
           <div className="pt-2 text-muted-foreground">Tip: presets change HSL variables globally.</div>
+        </div>
+      </div>
+    )
+  }
+
+  function PlaylistPickerModal(){
+    const [input, setInput] = useState('')
+    const [creating, setCreating] = useState(false)
+    const close = ()=>{ setPickerOpen(false); setPickerTrack(null); setInput(''); setCreating(false) }
+    const choose = async (pid)=>{ if(!pickerTrack) return; await addTrackToDbPlaylist(pid, pickerTrack); close() }
+    const create = async ()=>{ const name = input.trim(); if(!name) return; setCreating(true); await createPlaylist(name); await reloadPlaylists(); const pl = playlists.find(p=>p.name===name) || (await reloadPlaylists(), playlists.find(p=>p.name===name)); if(pl) await choose(pl.id); setCreating(false) }
+    if (!pickerOpen) return null
+    return (
+      <div className="fixed inset-0 z-50 bg-background/70 backdrop-blur-sm flex items-center justify-center" onClick={close}>
+        <div className="w-[420px] max-h-[70vh] overflow-auto bg-surface border border-border rounded p-4 shadow-xl" onClick={(e)=>e.stopPropagation()}>
+          <div className="text-sm font-semibold mb-2">Add to playlist</div>
+          <div className="space-y-2">
+            {(playlists||[]).map(pl=> (
+              <div key={pl.id} className="flex items-center justify-between border border-border rounded px-2 py-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-7 h-7 rounded bg-surface-muted overflow-hidden flex items-center justify-center">
+                    {playlistCovers[pl.id] ? <img src={playlistCovers[pl.id]} alt="cover" className="w-full h-full object-cover"/> : <span className="text-[10px] text-muted-foreground">★</span>}
+                  </div>
+                  <div className="text-xs font-medium truncate">{pl.name}</div>
+                </div>
+                <Button variant="ghost" onClick={()=>choose(pl.id)}>Add</Button>
+              </div>
+            ))}
+            <div className="h-px bg-border" />
+            <div className="text-xs text-muted-foreground">Create new</div>
+            <div className="flex gap-2">
+              <input className="flex-1 bg-surface-muted border border-border rounded px-2 py-1 text-sm" placeholder="New playlist name" value={input} onChange={(e)=>setInput(e.target.value)} />
+              <Button onClick={create} disabled={creating || !input.trim()}>{creating? 'Creating…':'Create'}</Button>
+            </div>
+          </div>
+          <div className="mt-3 flex justify-end"><Button variant="ghost" onClick={close}>Close</Button></div>
         </div>
       </div>
     )
@@ -1198,6 +1229,7 @@ export default function App() {
       {paletteOpen && <CommandPalette />}
       {themeOpen && <ThemePanel />}
       {settingsOpen && <SettingsPanel />}
+      {pickerOpen && <PlaylistPickerModal />}
       {miniDockOn && (
         <div className="fixed bottom-24 right-4 z-40 bg-surface/95 border border-border rounded shadow-xl p-3 w-[340px]">
           <div className="text-sm font-semibold mb-2 flex items-center justify-between">
