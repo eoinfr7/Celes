@@ -44,6 +44,9 @@ export default function App() {
   const platforms = useMemo(() => ['soundcloud', 'internetarchive'], [])
   const [platform] = useState('soundcloud')
   const [queue, setQueue] = useState([])
+  const [radioOn, setRadioOn] = useState(() => {
+    try { const v = localStorage.getItem('celes.radioOn'); return v == null ? true : v === 'true' } catch { return true }
+  })
 
   // Playlists from DB
   const [playlists, setPlaylists] = useState([]) // [{id,name,type,songs:[...] }]
@@ -62,6 +65,9 @@ export default function App() {
   })
   const audioRef = useRef(null)
   const nextAudioRef = useRef(null)
+  const queueRef = useRef([])
+  const radioOnRef = useRef(radioOn)
+  const currentTrackRef = useRef(null)
   const [crossfadeOn, setCrossfadeOn] = useState(true)
   const [crossfadeMs, setCrossfadeMs] = useState(4000)
 
@@ -146,6 +152,19 @@ export default function App() {
       const toProxy = (u) => `celes-stream://proxy?u=${encodeURIComponent(u)}`
       const res = await window.electronAPI.getStreamUrlWithFallback(next.id, next.platform||'youtube')
       if (res?.streamUrl) { next._prefetched = toProxy(res.streamUrl) }
+    } catch {}
+  }
+
+  async function ensureRadioQueue(){
+    try {
+      if (!radioOnRef.current || !currentTrackRef.current) return
+      const q = queueRef.current || []
+      if (q.length >= 3) return
+      const ct = currentTrackRef.current
+      const sim = await window.electronAPI.getSimilarTracks?.(ct.id, ct.platform||'youtube', 20)
+      const existing = new Set([`${ct.platform}:${ct.id}`, ...q.map(x=>`${x.platform}:${x.id}`)])
+      const picks = (sim || []).filter(t => !existing.has(`${t.platform}:${t.id}`)).slice(0, 5)
+      if (picks.length) setQueue(prev => [...prev, ...picks])
     } catch {}
   }
 
@@ -282,12 +301,30 @@ export default function App() {
   useEffect(() => { reloadPlaylists() }, [])
 
   useEffect(() => {
+    queueRef.current = queue
+  }, [queue])
+
+  useEffect(() => {
+    radioOnRef.current = radioOn
+    try { localStorage.setItem('celes.radioOn', String(radioOn)) } catch {}
+  }, [radioOn])
+
+  useEffect(() => {
+    currentTrackRef.current = currentTrack
+    if (currentTrack && radioOn) { void ensureRadioQueue() }
+  }, [currentTrack, radioOn])
+
+  useEffect(() => { if (radioOn) { void ensureRadioQueue() } }, [radioOn])
+
+  useEffect(() => { if (radioOn && (queue.length < 1)) { void ensureRadioQueue() } }, [queue.length])
+
+  useEffect(() => {
     const audio = audioRef.current
     if (!audio) return
     audio.volume = volume
     const onTime = () => setProgress(audio.currentTime || 0)
     const onDur = () => setDuration(audio.duration || 0)
-    const onEnd = () => nextFromQueue()
+    const onEnd = async () => { if (queueRef.current.length === 0) { await ensureRadioQueue() } nextFromQueue() }
     const onPlay = () => setIsPlaying(true)
     const onPause = () => setIsPlaying(false)
     audio.addEventListener('timeupdate', onTime)
@@ -456,6 +493,7 @@ export default function App() {
       <div className="fixed right-4 top-16 z-50 bg-neutral-900 border border-neutral-800 rounded p-3 w-96 shadow-xl">
         <div className="text-sm font-semibold mb-2">Settings</div>
         <div className="space-y-3 text-xs">
+          <div className="flex items-center justify-between"><div>Radio (auto similar)</div><input type="checkbox" checked={radioOn} onChange={(e)=>setRadioOn(e.target.checked)} /></div>
           <div className="flex items-center justify-between"><div>Crossfade</div><input type="checkbox" checked={crossfadeOn} onChange={(e)=>setCrossfadeOn(e.target.checked)} /></div>
           <div>
             <div className="mb-1">Crossfade Duration (ms)</div>
