@@ -320,6 +320,7 @@ export default function App() {
   const [chartsSC, setChartsSC] = useState([])
   const [chartsYT, setChartsYT] = useState([])
   const [followedFeed, setFollowedFeed] = useState([])
+  const [explore, setExplore] = useState(null)
   const [homeLoading, setHomeLoading] = useState(false)
   const [chartsDate, setChartsDate] = useState('')
 
@@ -329,6 +330,8 @@ export default function App() {
       setDailyMix([])
       const yt = await window.electronAPI.getTopCharts?.('youtube', 50)
       setChartsYT(yt || [])
+      const ex = await window.electronAPI.getExploreSections?.()
+      setExplore(ex || {})
       setChartsSC([])
       setFollowedFeed([])
       setChartsDate(new Date().toLocaleDateString())
@@ -1003,7 +1006,21 @@ export default function App() {
               </div>
                 )}
                 {!homeLoading && (<>
-                  <SectionCard title={`YouTube Top 50 • ${chartsDate}`} items={chartsYT} />
+                  {explore && (
+                    <>
+                      <SectionCard title={`New Releases • ${chartsDate}`} items={explore.newReleases||[]} />
+                      <SectionCard title={`Trending Now • ${chartsDate}`} items={explore.trending||[]} />
+                      <SectionCard title={`Chill`} items={explore.chill||[]} />
+                      <SectionCard title={`Focus`} items={explore.focus||[]} />
+                      <SectionCard title={`Workout`} items={explore.workout||[]} />
+                      <SectionCard title={`Party`} items={explore.party||[]} />
+                      <SectionCard title={`Throwback`} items={explore.throwback||[]} />
+                      <SectionCard title={`Hip‑Hop`} items={explore.hiphop||[]} />
+                      <SectionCard title={`Pop`} items={explore.pop||[]} />
+                      <SectionCard title={`Indie`} items={explore.indie||[]} />
+                    </>
+                  )}
+                  {!explore && <SectionCard title={`YouTube Top 50 • ${chartsDate}`} items={chartsYT} />}
                 </>)}
               </>
             )}

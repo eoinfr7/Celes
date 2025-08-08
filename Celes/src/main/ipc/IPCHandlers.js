@@ -398,6 +398,15 @@ class IPCHandlers {
       }
     });
 
+    ipcMain.handle('get-explore-sections', async () => {
+      try {
+        return await this.streamingService.getExploreSections();
+      } catch (error) {
+        console.error('Error getting explore sections:', error);
+        return {};
+      }
+    });
+
     ipcMain.handle('get-artist-tracks', async (event, artistName, limit) => {
       try {
         return await this.streamingService.getArtistTracks(artistName, limit);

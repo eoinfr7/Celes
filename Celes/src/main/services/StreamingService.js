@@ -763,27 +763,38 @@ class StreamingService extends BaseStreamingService {
   }
 
   async getSoundCloudTop(limit = 50) {
-    // Heuristic: run a few popular queries and merge unique
-    const queries = ['soundcloud top 50', 'charts', 'popular tracks', 'hot 100'];
-    const seen = new Set();
-    const out = [];
-    for (const q of queries) {
-      try {
-        const res = await super.searchMusic(q, 'soundcloud', limit);
-        for (const t of res || []) {
-          const key = `${t.platform}:${t.id}`;
-          if (!seen.has(key)) { seen.add(key); out.push(t); if (out.length >= limit) break; }
-        }
-        if (out.length >= limit) break;
-      } catch { /* continue */ }
-    }
-    return out.slice(0, limit);
+    // Disabled
+    return [];
   }
 
   async getTopCharts(platform = 'youtube', limit = 50) {
     if (platform === 'youtube') return this.getYouTubeTop(limit);
-    if (platform === 'soundcloud') return this.getSoundCloudTop(limit);
+    if (platform === 'soundcloud') return [];
     return [];
+  }
+
+  // --- Explore sections (approximate YouTube Music Explore)
+  async getExploreSections() {
+    const sections = [
+      { key: 'newReleases', title: 'New Releases', query: 'new music 2025 official audio', limit: 12 },
+      { key: 'trending', title: 'Trending Now', query: 'trending music 2025', limit: 12 },
+      { key: 'chill', title: 'Chill', query: 'chill music lofi vibey official audio', limit: 12 },
+      { key: 'focus', title: 'Focus', query: 'focus music ambient instrumental official audio', limit: 12 },
+      { key: 'workout', title: 'Workout', query: 'workout hits 2025 gym pump', limit: 12 },
+      { key: 'party', title: 'Party', query: 'party hits 2025', limit: 12 },
+      { key: 'throwback', title: 'Throwback', query: 'throwback hits 2000s 2010s', limit: 12 },
+      { key: 'hiphop', title: 'Hip-Hop', query: 'hip hop 2025 official audio', limit: 12 },
+      { key: 'pop', title: 'Pop', query: 'pop 2025 official audio', limit: 12 },
+      { key: 'indie', title: 'Indie', query: 'indie 2025 official audio', limit: 12 },
+    ]
+    const out = {}
+    for (const s of sections) {
+      try {
+        const r = await this.searchYouTubePiped(s.query, s.limit)
+        out[s.key] = r || []
+      } catch { out[s.key] = [] }
+    }
+    return out
   }
 
   // --- Artist helpers ---
