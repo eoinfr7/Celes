@@ -318,7 +318,7 @@ export default function App() {
   // Home: daily mixes / charts
   const [dailyMix, setDailyMix] = useState([])
   const [chartsSC, setChartsSC] = useState([])
-  const [chartsYT, setChartsYT] = useState([])
+  const [chartsYT, setChartsYT] = useState([]) // deprecated; retained only to avoid crashes if referenced
   const [followedFeed, setFollowedFeed] = useState([])
   const [explore, setExplore] = useState(null)
   const [homeLoading, setHomeLoading] = useState(false)
@@ -328,8 +328,6 @@ export default function App() {
     setHomeLoading(true)
     try {
       setDailyMix([])
-      const yt = await window.electronAPI.getTopCharts?.('youtube', 50)
-      setChartsYT(yt || [])
       const ex = await window.electronAPI.getExploreSections?.()
       setExplore(ex || {})
       setChartsSC([])
@@ -1020,7 +1018,7 @@ export default function App() {
                       <SectionCard title={`Indie`} items={explore.indie||[]} />
                     </>
                   )}
-                  {!explore && <SectionCard title={`YouTube Top 50 • ${chartsDate}`} items={chartsYT} />}
+                  {!explore && <div className="text-sm text-muted-foreground">Loading explore…</div>}
                 </>)}
               </>
             )}

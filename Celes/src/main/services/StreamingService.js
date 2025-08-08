@@ -775,26 +775,87 @@ class StreamingService extends BaseStreamingService {
 
   // --- Explore sections (approximate YouTube Music Explore)
   async getExploreSections() {
-    const sections = [
-      { key: 'newReleases', title: 'New Releases', query: 'new music 2025 official audio', limit: 12 },
-      { key: 'trending', title: 'Trending Now', query: 'trending music 2025', limit: 12 },
-      { key: 'chill', title: 'Chill', query: 'chill music lofi vibey official audio', limit: 12 },
-      { key: 'focus', title: 'Focus', query: 'focus music ambient instrumental official audio', limit: 12 },
-      { key: 'workout', title: 'Workout', query: 'workout hits 2025 gym pump', limit: 12 },
-      { key: 'party', title: 'Party', query: 'party hits 2025', limit: 12 },
-      { key: 'throwback', title: 'Throwback', query: 'throwback hits 2000s 2010s', limit: 12 },
-      { key: 'hiphop', title: 'Hip-Hop', query: 'hip hop 2025 official audio', limit: 12 },
-      { key: 'pop', title: 'Pop', query: 'pop 2025 official audio', limit: 12 },
-      { key: 'indie', title: 'Indie', query: 'indie 2025 official audio', limit: 12 },
-    ]
-    const out = {}
-    for (const s of sections) {
+    // Disk cache to guarantee non-empty UI even if network flakes
+    const getCachePath = () => {
       try {
-        const r = await this.searchYouTubePiped(s.query, s.limit)
-        out[s.key] = r || []
-      } catch { out[s.key] = [] }
+        const dir = path.join(app.getPath('userData'), 'explore-cache');
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        return path.join(dir, 'sections.json');
+      } catch { return null }
     }
-    return out
+    const readCache = (ttlMs = 60 * 60 * 1000) => {
+      try {
+        const p = getCachePath(); if (!p || !fs.existsSync(p)) return null;
+        const json = JSON.parse(fs.readFileSync(p, 'utf8'));
+        if (json && Number.isFinite(json.ts) && (Date.now() - json.ts) < ttlMs) return json.data;
+      } catch {}
+      return null;
+    }
+    const writeCache = (data) => {
+      try {
+        const p = getCachePath(); if (!p) return; fs.writeFileSync(p, JSON.stringify({ ts: Date.now(), data }, null, 2));
+      } catch {}
+    }
+
+    const sections = [
+      { key: 'newReleases', title: 'New Releases', queries: ['new music 2025 official audio', 'new releases this week official audio', 'brand new single 2025'] },
+      { key: 'trending', title: 'Trending Now', queries: ['trending music 2025', 'viral hits 2025', 'hot music now 2025'] },
+      { key: 'chill', title: 'Chill', queries: ['chill music official audio', 'chill pop 2025', 'lofi hip hop beats'] },
+      { key: 'focus', title: 'Focus', queries: ['focus music ambient instrumental', 'study music deep focus', 'concentration ambient'] },
+      { key: 'workout', title: 'Workout', queries: ['workout hits 2025', 'gym pump edm', 'running playlist 2025'] },
+      { key: 'party', title: 'Party', queries: ['party hits 2025', 'dance pop 2025', 'club hits 2025'] },
+      { key: 'throwback', title: 'Throwback', queries: ['2000s hits', '2010s hits', '90s throwback'] },
+      { key: 'hiphop', title: 'Hip-Hop', queries: ['hip hop 2025 official audio', 'rap 2025', 'trap 2025'] },
+      { key: 'pop', title: 'Pop', queries: ['pop hits 2025', 'top pop 2025', 'new pop 2025'] },
+      { key: 'indie', title: 'Indie', queries: ['indie 2025 official audio', 'indie rock 2025', 'bedroom pop 2025'] },
+    ]
+
+    const limit = 12;
+    const tryQueries = async (queries) => {
+      const seen = new Set();
+      let collected = [];
+      for (const q of queries) {
+        // Prefer Piped; if empty, fall back to base search
+        try {
+          const a = await this.searchYouTubePiped(q, limit * 2);
+          for (const t of a || []) { const key = String(t.id); if (!seen.has(key)) { seen.add(key); collected.push(t); if (collected.length >= limit) break; } }
+          if (collected.length >= limit) break;
+        } catch {}
+        if (collected.length < limit) {
+          try {
+            const b = await super.searchMusic(q, 'youtube', limit * 2);
+            for (const t of b || []) { const key = String(t.id); if (!seen.has(key)) { seen.add(key); collected.push(t); if (collected.length >= limit) break; } }
+            if (collected.length >= limit) break;
+          } catch {}
+        }
+      }
+      return collected.slice(0, limit);
+    }
+
+    const out = {};
+    // Build trending first so other sections can borrow as fallback
+    const trending = await tryQueries(sections.find(s=>s.key==='trending').queries);
+    out.trending = trending;
+    for (const s of sections) {
+      if (s.key === 'trending') continue;
+      try {
+        const r = await tryQueries(s.queries);
+        out[s.key] = (r && r.length) ? r : trending.slice(0, limit);
+      } catch {
+        out[s.key] = trending.slice(0, limit);
+      }
+    }
+
+    // If everything is empty, fall back to generic safe queries and finally cache
+    const totalCount = Object.values(out).reduce((n, arr) => n + ((arr || []).length), 0);
+    if (totalCount === 0) {
+      const generic = await tryQueries(['popular music 2025 official audio', 'best songs 2025', 'top songs 2025']);
+      for (const s of sections) out[s.key] = generic.slice(0, limit);
+    }
+
+    // Persist cache and return
+    try { writeCache(out) } catch {}
+    return out;
   }
 
   // --- Artist helpers ---
