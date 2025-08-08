@@ -893,6 +893,16 @@ export default function App() {
                       </div>
                       <div className="flex items-center gap-2">
                         <Button variant="ghost" onClick={() => setActivePlaylistId(p.id)}>Open</Button>
+                        <Button variant="ghost" onClick={async () => {
+                          try {
+                            const tracks = (p.songs||[]).filter(t => (t.type==='stream' || t.platform)).map(t => ({ id: t.stream_id||t.id, stream_id: String(t.stream_id||t.id), platform: t.platform||'youtube', title: t.title, artist: t.artist, streamUrl: t.stream_url||t.streamUrl }))
+                            if (!tracks.length) { alert('No streaming tracks to download'); return }
+                            const settings = await window.electronAPI.getSettings?.()||{}
+                            const targetDir = settings.downloadDir || prompt('Download folder')
+                            if (!targetDir) return
+                            await window.electronAPI.downloadQueueAdd?.(tracks, targetDir)
+                          } catch {}
+                        }}>Download</Button>
                         {p.type !== 'system' && (
                           <>
                             <Button variant="ghost" onClick={() => { const n = prompt('Rename playlist', p.name); if (n && n.trim()) renamePlaylist(p.id, n.trim()) }}>Rename</Button>
