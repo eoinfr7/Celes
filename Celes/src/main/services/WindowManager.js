@@ -13,6 +13,8 @@ class WindowManager {
       height: 800,
       minWidth: 800,
       minHeight: 600,
+      title: 'Celes',
+      icon: path.join(__dirname, '..', '..', '..', 'assets', 'icons', 'celes-star.png'),
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,

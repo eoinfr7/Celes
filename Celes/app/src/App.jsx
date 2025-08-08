@@ -26,7 +26,10 @@ function Button({ className = '', variant = 'primary', ...props }) {
 function Sidebar({ onSelect }) {
   return (
     <aside className="w-60 border-r border-border h-screen sticky top-0 hidden md:flex flex-col bg-surface">
-      <div className="px-4 py-3 text-lg font-semibold">Celes</div>
+      <div className="px-4 py-3 text-lg font-semibold flex items-center gap-2">
+        <img src="/assets/icons/celes-star.svg" alt="Celes" className="w-5 h-5 opacity-90" />
+        Celes
+      </div>
       <nav className="px-2 py-2 space-y-1">
         {[
           ['home', 'Home'],
@@ -952,7 +955,7 @@ export default function App() {
         <header className="h-14 border-b border-border flex items-center px-4 gap-3 bg-surface">
           <div className="hidden md:flex items-center gap-2 px-2 py-1 rounded bg-surface border border-border flex-1 max-w-3xl">
             <input className="bg-transparent outline-none text-sm w-full" placeholder="Ask for any song, artist, mood…" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') doSearch() }} />
-            <Button onClick={doSearch} disabled={loading}>{loading ? 'Searching…' : 'Search'}</Button>
+            <Button onClick={doSearch} disabled={loading}>{loading ? <span className="inline-flex items-center gap-1"><img src="/assets/icons/celes-star.svg" className="w-4 h-4 animate-spin opacity-80" alt="loading"/> Searching…</span> : 'Search'}</Button>
           </div>
           <Button variant="ghost" onClick={()=>setThemeOpen(v=>!v)}>Theme</Button>
           <Button variant="ghost" onClick={()=>setSettingsOpen(v=>!v)}>Settings</Button>
