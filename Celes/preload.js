@@ -93,6 +93,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getStreamUrl: (trackId, platform) => ipcRenderer.invoke('get-stream-url', trackId, platform),
   getStreamUrlWithFallback: (trackId, primaryPlatform) => ipcRenderer.invoke('get-stream-url-with-fallback', trackId, primaryPlatform),
   downloadTrack: (track, targetDir) => ipcRenderer.invoke('download-track', track, targetDir),
+  getDownloads: () => ipcRenderer.invoke('get-downloads'),
+  deleteDownload: (downloadId, removeFile) => ipcRenderer.invoke('delete-download', downloadId, removeFile),
   getTrackInfo: (trackId, platform) => ipcRenderer.invoke('get-track-info', trackId, platform),
   getTrackLoudness: (trackId, platform, options) => ipcRenderer.invoke('get-track-loudness', trackId, platform, options),
   getReleaseRadar: (limit) => ipcRenderer.invoke('get-release-radar', limit),

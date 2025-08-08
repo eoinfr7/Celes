@@ -27,6 +27,7 @@ function Sidebar({ onSelect }) {
           ['home', 'Home'],
           ['search', 'Search'],
           ['library', 'Library'],
+          ['downloads', 'Downloads'],
         ].map(([key, label]) => (
           <Button key={key} variant="ghost" className="w-full justify-start" onClick={() => onSelect(key)}>{label}</Button>
         ))}
@@ -597,6 +598,35 @@ export default function App() {
     )
   }
 
+  function DownloadsView(){
+    const [items, setItems] = useState([])
+    const [loading, setLoading] = useState(false)
+    const [quota, setQuota] = useState({ used:0, limit: 10*1024*1024*1024 })
+    const refresh = async ()=>{ setLoading(true); try { const list = await window.electronAPI.getDownloads?.(); setItems(Array.isArray(list)? list:[]) } finally { setLoading(false) } }
+    useEffect(()=>{ refresh() },[])
+    const fmt = (n)=>{ if(!Number.isFinite(n)) return '—'; const units=['B','KB','MB','GB','TB']; let i=0; let v=n; while(v>=1024 && i<units.length-1){ v/=1024; i++ } return `${v.toFixed(1)} ${units[i]}` }
+    useEffect(()=>{ const used = (items||[]).reduce((s,x)=> s + (x.bytes||0), 0); setQuota(q=>({ ...q, used })) }, [items])
+    return (
+      <div className="bg-neutral-900 border border-neutral-800 rounded p-3">
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-sm font-semibold">Downloads</div>
+          <div className="text-[11px] text-neutral-400">{fmt(quota.used)} / {fmt(quota.limit)}</div>
+        </div>
+        <div className="space-y-2">
+          {loading && <div className="text-xs text-neutral-400">Loading…</div>}
+          {!loading && items.length===0 && <div className="text-xs text-neutral-500">No downloads yet</div>}
+          {items.map(d => (
+            <div key={d.id} className="text-xs flex items-center gap-2 border border-neutral-800 rounded p-2">
+              <div className="flex-1 truncate">{d.title || 'Unknown'} — {d.artist || ''}</div>
+              <div className="text-neutral-400">{fmt(d.bytes)}</div>
+              <Button variant="ghost" onClick={async()=>{ await window.electronAPI.deleteDownload?.(d.id, true); refresh() }}>Delete</Button>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
   const [paletteOpen, setPaletteOpen] = useState(false)
 
   function SettingsPanel(){
@@ -767,6 +797,9 @@ export default function App() {
                   </div>
                 </div>
               </div>
+            )}
+            {view === 'downloads' && (
+              <DownloadsView />
             )}
           </section>
 

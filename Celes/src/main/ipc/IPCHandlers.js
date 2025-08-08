@@ -502,6 +502,13 @@ class IPCHandlers {
       }
     });
 
+    ipcMain.handle('get-downloads', async () => {
+      try { return await this.database.getDownloads(); } catch (e) { return [] }
+    });
+    ipcMain.handle('delete-download', async (event, downloadId, removeFile) => {
+      try { return await this.database.deleteDownload(downloadId, !!removeFile); } catch (e) { return { success:false, error:e.message } }
+    });
+
     ipcMain.handle('get-track-info', async (event, trackId, platform) => {
       try {
         return await this.streamingService.getTrackInfo(trackId, platform);

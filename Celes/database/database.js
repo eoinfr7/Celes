@@ -460,6 +460,43 @@ class MusicDatabase {
     `).all(playlistId);
   }
 
+  // --- Downloads ---
+  getDownloads() {
+    return new Promise((resolve, reject) => {
+      this.db.all(`
+        SELECT d.*, s.title, s.artist, s.platform
+        FROM downloads d
+        LEFT JOIN songs s ON s.id = d.song_id
+        ORDER BY d.created_at DESC
+      `, (err, rows) => {
+        if (err) reject(err); else resolve(rows || []);
+      });
+    });
+  }
+
+  getDownloadBySongId(songId) {
+    return new Promise((resolve, reject) => {
+      this.db.get('SELECT * FROM downloads WHERE song_id = ?', [songId], (err, row) => {
+        if (err) reject(err); else resolve(row || null);
+      });
+    });
+  }
+
+  deleteDownload(downloadId, removeFile = true) {
+    return new Promise((resolve) => {
+      try {
+        const row = this.db.prepare('SELECT file_path FROM downloads WHERE id = ?').get(downloadId);
+        if (row && removeFile && row.file_path) {
+          try { if (fs.existsSync(row.file_path)) fs.unlinkSync(row.file_path); } catch {}
+        }
+        const res = this.db.prepare('DELETE FROM downloads WHERE id = ?').run(downloadId);
+        resolve({ success: true, changes: res.changes });
+      } catch (error) {
+        resolve({ success: false, error: error.message });
+      }
+    });
+  }
+
   createPlaylist(name, type = 'user') {
     try {
       const result = this.db.prepare('INSERT INTO playlists (name, type) VALUES (?, ?)').run(name, type);
