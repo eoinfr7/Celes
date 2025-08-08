@@ -235,8 +235,8 @@ class MusicPlayerApp {
     protocol.handle('celes-stream', async (request) => {
       try {
         const url = new URL(request.url);
-        const encoded = decodeURIComponent(url.hostname + url.pathname).replace(/^\//, '');
-        const originalUrl = url.searchParams.get('u') || encoded;
+        const encoded = decodeURIComponent((url.hostname || '') + (url.pathname || '')).replace(/^\//, '');
+        const originalUrl = url.searchParams.get('u') || (encoded || null);
         
         if (!originalUrl) throw new Error('Stream URL not found');
 

@@ -98,6 +98,22 @@ export default function App() {
   const [theaterOn, setTheaterOn] = useState(false)
   const [videoOn, setVideoOn] = useState(false)
   const videoRef = useRef(null)
+  const [videoUrl, setVideoUrl] = useState(null)
+
+  function deriveYouTubeId(track){
+    try {
+      if (!track) return null
+      const tryId = (s)=>{ const x=String(s||''); return /^[a-zA-Z0-9_-]{11}$/.test(x)? x.slice(0,11) : null }
+      const id1 = tryId(track.id)
+      if (id1) return id1
+      const id2 = tryId(track.stream_id)
+      if (id2) return id2
+      const tryUrl = String(track.url||track.stream_url||'')
+      if (tryUrl.includes('watch?v=')) { const v = new URL(tryUrl).searchParams.get('v'); const id = tryId(v); if (id) return id }
+      if (tryUrl.includes('youtu.be/')) { const id = tryUrl.split('youtu.be/')[1]?.slice(0,11); const ok = tryId(id); if (ok) return ok }
+      return null
+    } catch { return null }
+  }
 
   // WebAudio EQ
   const audioCtxRef = useRef(null)
@@ -353,7 +369,12 @@ export default function App() {
     await crossfadeTo(src, options.fadeMs)
     rebuildAudioGraph()
     await applyNormalizationForTrack(track)
-      setCurrentTrack(track)
+    setCurrentTrack(track)
+    // Reset Theater video if platform changes or new track
+    try {
+      const newVid = deriveYouTubeId(track)
+      if (!newVid) { setVideoOn(false); setVideoUrl(null); const el = videoRef.current; if (el) { try { el.pause() } catch {}; el.src='' } }
+    } catch {}
     prefetchForQueue()
   }
 
@@ -1126,25 +1147,25 @@ export default function App() {
         <div className="fixed inset-0 z-50 bg-black">
           {!videoOn && <canvas id="vis" className="absolute inset-0 opacity-40" />}
           {videoOn && (
-            <video ref={videoRef} className="absolute inset-0 w-full h-full object-contain bg-black" controls={false} muted playsInline />
+            <video ref={videoRef} src={videoUrl||''} className="absolute inset-0 w-full h-full object-contain bg-black" controls={false} muted playsInline autoPlay onCanPlay={()=>{ try { videoRef.current?.play?.() } catch {} }} />
           )}
           <div className="relative h-full w-full flex flex-col items-center justify-center gap-6" onClick={(e)=>e.stopPropagation()}>
             <div className="absolute top-4 right-4 flex gap-2">
               <Button variant="ghost" onClick={()=>setTheaterOn(false)}>Exit</Button>
               <Button variant="ghost" onClick={async ()=>{
                 try {
-                  if (!currentTrack || (currentTrack.platform!=='youtube' && !(String(currentTrack.id||'').length===11))) { alert('Video only for YouTube tracks'); return }
                   if (!videoOn) {
-                    const vid = String(currentTrack.id||'').slice(0,11)
+                    const vid = deriveYouTubeId(currentTrack)
+                    if (!vid) { alert('Video only for YouTube tracks'); return }
                     const res = await window.electronAPI.getYouTubeVideoStream?.(vid)
                     const url = res?.streamUrl
                     if (!url) { alert('No video stream available'); return }
-                    const el = videoRef.current
-                    if (el) { el.src = `celes-stream://proxy?u=${encodeURIComponent(url)}`; await el.play().catch(()=>{}) }
+                    setVideoUrl(`celes-stream://proxy?u=${encodeURIComponent(url)}`)
                     setVideoOn(true)
                   } else {
-                    const el = videoRef.current; if (el) { try { el.pause() } catch {}; el.src=''; }
                     setVideoOn(false)
+                    setVideoUrl(null)
+                    const el = videoRef.current; if (el) { try { el.pause() } catch {}; el.src=''; }
                   }
                 } catch {}
               }}>{videoOn? 'Hide Video' : 'Show Video'}</Button>
