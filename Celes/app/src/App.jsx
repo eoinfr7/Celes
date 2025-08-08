@@ -512,8 +512,7 @@ export default function App() {
   useEffect(() => { try { localStorage.setItem('celes.volume', String(volume)) } catch {} ; try { if (audioRef.current) audioRef.current.volume = volume } catch {}; try { if (nextAudioRef.current) nextAudioRef.current.volume = volume } catch {} }, [volume])
   useEffect(() => { window.electronAPI.streamingHealthCheck?.() }, [])
   useEffect(() => {
-    const onCmd = (_payload) => {
-      const payload = _payload?.detail ? _payload.detail : _payload
+    const onCmd = (payload) => {
       try {
         if (!payload || typeof payload !== 'object') return
         if (payload.type === 'toggle-play') { togglePlayPause() }
@@ -888,7 +887,7 @@ export default function App() {
           </div>
           <Button variant="ghost" onClick={()=>setThemeOpen(v=>!v)}>Theme</Button>
           <Button variant="ghost" onClick={()=>setSettingsOpen(v=>!v)}>Settings</Button>
-          <Button variant="ghost" onClick={()=>window.electronAPI.openMiniPlayer?.()}>Mini</Button>
+          <Button variant="ghost" onClick={async()=>{ const res = await window.electronAPI.openMiniPlayer?.(); if(!res?.success){ alert('Mini failed to open') } }}>Mini</Button>
           <div className="md:hidden flex-1" />
         </header>
 

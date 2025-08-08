@@ -31,15 +31,15 @@
       </div>
     </div>
     <script>
-      const { ipcRenderer } = require('electron')
+      const api = window.electronAPI
       // Relay controls
-      document.getElementById('play').onclick = ()=> ipcRenderer.invoke('toggle-play')
-      document.getElementById('prev').onclick = ()=> ipcRenderer.invoke('previous-track')
-      document.getElementById('next').onclick = ()=> ipcRenderer.invoke('next-track')
-      document.getElementById('vol').oninput = (e)=> ipcRenderer.invoke('set-volume', Number(e.target.value))
+      document.getElementById('play').onclick = ()=> api.togglePlay()
+      document.getElementById('prev').onclick = ()=> api.previousTrack()
+      document.getElementById('next').onclick = ()=> api.nextTrack()
+      document.getElementById('vol').oninput = (e)=> api.setVolume ? api.setVolume(Number(e.target.value)) : api.sendRendererCommand('set-volume', Number(e.target.value))
       document.getElementById('close').onclick = ()=> window.close()
 
-      ipcRenderer.on('mini-now-playing', (e, data)=>{
+      api.onMiniNowPlaying?.((data)=>{
         document.getElementById('title').textContent = data?.title || 'Nothing playing'
         document.getElementById('artist').textContent = data?.artist || ''
         const img = document.getElementById('thumb')

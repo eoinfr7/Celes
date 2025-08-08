@@ -120,6 +120,8 @@ class WindowManager {
 
     const miniPath = path.join(__dirname, '..', '..', 'mini', 'mini.html');
     this.miniWindow.loadFile(miniPath);
+    // ensure ready-to-show
+    this.miniWindow.once('ready-to-show', ()=>{ try { this.miniWindow.show() } catch {} })
 
     this.miniWindow.on('closed', () => { this.miniWindow = null; });
     return this.miniWindow;

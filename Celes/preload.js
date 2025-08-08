@@ -92,6 +92,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   searchMusicWithFallback: (query, primaryPlatform, limit) => ipcRenderer.invoke('search-music-with-fallback', query, primaryPlatform, limit),
   getStreamUrl: (trackId, platform) => ipcRenderer.invoke('get-stream-url', trackId, platform),
   getStreamUrlWithFallback: (trackId, primaryPlatform) => ipcRenderer.invoke('get-stream-url-with-fallback', trackId, primaryPlatform),
+  // Playback controls exposed for mini and renderer
+  nextTrack: () => ipcRenderer.invoke('next-track'),
+  previousTrack: () => ipcRenderer.invoke('previous-track'),
+  togglePlay: () => ipcRenderer.invoke('toggle-play'),
   downloadTrack: (track, targetDir) => ipcRenderer.invoke('download-track', track, targetDir),
   getDownloads: () => ipcRenderer.invoke('get-downloads'),
   deleteDownload: (downloadId, removeFile) => ipcRenderer.invoke('delete-download', downloadId, removeFile),
