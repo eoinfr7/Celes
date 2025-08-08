@@ -256,17 +256,24 @@ export default function App() {
     } catch {}
   }
 
+  const radioCooldownRef = useRef(0)
+  const radioAddingRef = useRef(false)
+  function keyForTrack(t){ return `${t.platform||'youtube'}:${String(t.id)}` }
   async function ensureRadioQueue(){
     try {
       if (!radioOnRef.current || !currentTrackRef.current) return
+      const now = Date.now()
+      if (radioAddingRef.current || (now - radioCooldownRef.current) < 4000) return
       const q = queueRef.current || []
-      if (q.length >= 3) return
+      if (q.length >= 1) return
+      radioAddingRef.current = true
       const ct = currentTrackRef.current
-      const sim = await window.electronAPI.getSimilarTracks?.(ct.id, ct.platform||'youtube', 20)
-      const existing = new Set([`${ct.platform}:${ct.id}`, ...q.map(x=>`${x.platform}:${x.id}`)])
-      const picks = (sim || []).filter(t => !existing.has(`${t.platform}:${t.id}`)).slice(0, 5)
-      if (picks.length) setQueue(prev => [...prev, ...picks])
-    } catch {}
+      const sim = await window.electronAPI.getSimilarTracks?.(ct.id, ct.platform||'youtube', 12)
+      const existing = new Set([keyForTrack(ct), ...q.map(keyForTrack)])
+      const pick = (sim || []).find(t => !existing.has(keyForTrack(t)))
+      if (pick) setQueue(prev => [...prev, pick])
+      radioCooldownRef.current = Date.now()
+    } catch {} finally { radioAddingRef.current = false }
   }
 
   async function reloadPlaylists() {
@@ -419,7 +426,7 @@ export default function App() {
 
   useEffect(() => { if (radioOn) { void ensureRadioQueue() } }, [radioOn])
 
-  useEffect(() => { if (radioOn && (queue.length < 1)) { void ensureRadioQueue() } }, [queue.length])
+  useEffect(() => { if (radioOn && (queue.length < 1)) { void ensureRadioQueue() } }, [queue.length, radioOn])
 
   useEffect(() => {
     const audio = audioRef.current
@@ -1073,9 +1080,12 @@ export default function App() {
         </div>
       )}
       {theaterOn && (
-        <div className="fixed inset-0 z-50 bg-black" onClick={()=>setTheaterOn(false)}>
+        <div className="fixed inset-0 z-50 bg-black">
           <canvas id="vis" className="absolute inset-0 opacity-40" />
           <div className="relative h-full w-full flex flex-col items-center justify-center gap-6" onClick={(e)=>e.stopPropagation()}>
+            <div className="absolute top-4 right-4 flex gap-2">
+              <Button variant="ghost" onClick={()=>setTheaterOn(false)}>Exit</Button>
+            </div>
             <img src={currentTrack?.thumbnail || 'https://via.placeholder.com/512'} className="w-[36vmin] h-[36vmin] rounded shadow-lg object-cover" alt="art" />
             <div className="text-3xl font-bold text-white max-w-[80vw] text-center truncate">{currentTrack?.title||'Nothing playing'}</div>
             <div className="text-lg text-neutral-300 truncate max-w-[70vw]">{currentTrack?.artist||''}</div>
