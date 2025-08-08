@@ -319,6 +319,8 @@ export default function App() {
     const a = audioRef.current
     if (!a) return
     const toProxy = (u) => `celes-stream://proxy?u=${encodeURIComponent(u)}`
+    // Reset any lingering next element source to avoid double-playing
+    if (nextAudioRef.current) { try { nextAudioRef.current.pause(); nextAudioRef.current.src = '' } catch {} }
     let src = track?._prefetched || (track?.streamUrl ? toProxy(track.streamUrl) : null)
     if (!src) {
       const prefPlat = track.platform || 'youtube'
