@@ -326,14 +326,11 @@ export default function App() {
   async function loadHome() {
     setHomeLoading(true)
     try {
-      const radar = await window.electronAPI.getReleaseRadar?.(24)
-      setDailyMix(Array.isArray(radar) ? radar : [])
+      setDailyMix([])
       const yt = await window.electronAPI.getTopCharts?.('youtube', 50)
       setChartsYT(yt || [])
-      const sc = await window.electronAPI.getTopCharts?.('soundcloud', 50)
-      setChartsSC(sc || [])
-      const fol = await window.electronAPI.getFollowedArtistsTracks?.(30)
-      setFollowedFeed(fol || [])
+      setChartsSC([])
+      setFollowedFeed([])
       setChartsDate(new Date().toLocaleDateString())
     } finally { setHomeLoading(false) }
   }
@@ -727,7 +724,12 @@ export default function App() {
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('celes.theme') || 'null')
-      if (saved) applyThemeVars(saved)
+      if (saved) {
+        applyThemeVars(saved)
+      } else {
+        const solar = THEMES.find(t=>t.name==='Solarized')
+        if (solar) applyThemeVars(solar.vars)
+      }
     } catch {}
   }, [])
 
@@ -1000,10 +1002,7 @@ export default function App() {
                   </div>
                 )}
                 {!homeLoading && (<>
-                  <SectionCard title={`Daily Mix • ${chartsDate}`} items={dailyMix} />
                   <SectionCard title={`YouTube Top 50 • ${chartsDate}`} items={chartsYT} />
-                  <SectionCard title={`SoundCloud Top 50 • ${chartsDate}`} items={chartsSC} />
-                  <SectionCard title={`From Artists You Follow • ${chartsDate}`} items={followedFeed} />
                 </>)}
               </>
             )}
