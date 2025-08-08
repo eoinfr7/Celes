@@ -71,6 +71,7 @@ export default function App() {
   const [dailyMix, setDailyMix] = useState([])
   const [chartsSC, setChartsSC] = useState([])
   const [chartsYT, setChartsYT] = useState([])
+  const [followedFeed, setFollowedFeed] = useState([])
   const [homeLoading, setHomeLoading] = useState(false)
   const [chartsDate, setChartsDate] = useState('')
 
@@ -83,6 +84,8 @@ export default function App() {
       setChartsYT(yt || [])
       const sc = await window.electronAPI.getTopCharts?.('soundcloud', 50)
       setChartsSC(sc || [])
+      const fol = await window.electronAPI.getFollowedArtistsTracks?.(30)
+      setFollowedFeed(fol || [])
       setChartsDate(new Date().toLocaleDateString())
     } finally { setHomeLoading(false) }
   }
@@ -220,6 +223,11 @@ export default function App() {
 
   useEffect(() => { try { localStorage.setItem('celes.volume', String(volume)) } catch {} ; if (audioRef.current) audioRef.current.volume = volume }, [volume])
   useEffect(() => { window.electronAPI.streamingHealthCheck?.() }, [])
+  useEffect(() => {
+    const onKey = (e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase()==='k') { e.preventDefault(); setPaletteOpen(v=>!v) } }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   const SectionCard = ({ title, items }) => (
     <div className="bg-neutral-900 border border-neutral-800 rounded p-3">
@@ -249,6 +257,13 @@ export default function App() {
                 const id = await persistTrack(t)
                 if (id) await window.electronAPI.toggleLikeSong?.(id)
               }}>♥</Button>
+              <Button className="mt-1" variant="ghost" onClick={async ()=>{ try { await window.electronAPI.followArtistStreaming?.(t.artist); alert(`Following ${t.artist}`)} catch{} }}>Follow</Button>
+              <Button className="mt-1" variant="ghost" onClick={async ()=>{ try { await window.electronAPI.unfollowArtistStreaming?.(t.artist); alert(`Unfollowed ${t.artist}`)} catch{} }}>Unfollow</Button>
+              <Button className="mt-1" variant="ghost" onClick={async ()=>{
+                // Simple radio: fetch similar and queue them
+                const sim = await window.electronAPI.getSimilarTracks?.(t.id, t.platform||'youtube', 20)
+                if (Array.isArray(sim)) sim.forEach(addToQueue)
+              }}>Radio</Button>
             </div>
           </div>
         ))}
@@ -326,6 +341,33 @@ export default function App() {
     )
   }
 
+  function CommandPalette(){
+    const [input, setInput] = useState('')
+    const commands = [
+      {name:'Go Home', run:()=>setView('home')},
+      {name:'Open Search', run:()=>setView('search')},
+      {name:'New Playlist', run:()=>{ const n=prompt('New playlist name','My Playlist'); if(n) createPlaylist(n)}},
+      {name:'Toggle Theme Panel', run:()=>setThemeOpen(v=>!v)},
+      {name:'Open Liked Songs', run:()=>{ const liked=playlists.find(p=>p.name==='Liked Songs'); if(liked) setActivePlaylistId(liked.id); }}
+    ]
+    const filtered = commands.filter(c=>c.name.toLowerCase().includes(input.toLowerCase()))
+    return (
+      <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center pt-32" onClick={()=>setPaletteOpen(false)}>
+        <div className="w-[560px] bg-neutral-900 border border-neutral-800 rounded shadow-xl" onClick={(e)=>e.stopPropagation()}>
+          <input autoFocus className="w-full bg-neutral-950 border-b border-neutral-800 px-3 py-2 text-sm" placeholder="Type a command…" value={input} onChange={(e)=>setInput(e.target.value)} onKeyDown={(e)=>{ if(e.key==='Escape') setPaletteOpen(false)}} />
+          <div className="max-h-80 overflow-auto">
+            {filtered.map((c,i)=>(
+              <div key={i} className="px-3 py-2 text-sm hover:bg-neutral-800 cursor-pointer" onClick={()=>{ c.run(); setPaletteOpen(false) }}>{c.name}</div>
+            ))}
+            {filtered.length===0 && <div className="px-3 py-3 text-xs text-neutral-500">No commands</div>}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const [paletteOpen, setPaletteOpen] = useState(false)
+
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 flex">
       <Sidebar onSelect={setView} />
@@ -348,6 +390,7 @@ export default function App() {
                   <SectionCard title={`Daily Mix • ${chartsDate}`} items={dailyMix} />
                   <SectionCard title={`YouTube Top 50 • ${chartsDate}`} items={chartsYT} />
                   <SectionCard title={`SoundCloud Top 50 • ${chartsDate}`} items={chartsSC} />
+                  <SectionCard title={`From Artists You Follow • ${chartsDate}`} items={followedFeed} />
                 </>)}
               </>
             )}
@@ -416,6 +459,20 @@ export default function App() {
                   const n = prompt('New playlist name', `Playlist ${playlists.length+1}`)
                   if (n && n.trim()) createPlaylist(n.trim())
                 }}>New</Button>
+                {activePlaylist && activePlaylist.type !== 'system' && (
+                  <>
+                    <Button variant="ghost" onClick={() => {
+                      // export JSON
+                      const data = JSON.stringify({ name: activePlaylist.name, tracks: activePlaylist.songs || [] }, null, 2)
+                      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([data], {type:'application/json'})); a.download = `${activePlaylist.name}.json`; a.click();
+                    }}>Export</Button>
+                    <Button variant="ghost" onClick={() => {
+                      const inp = document.createElement('input'); inp.type='file'; inp.accept='application/json';
+                      inp.onchange = async (e)=>{ const f=e.target.files?.[0]; if(!f) return; const text=await f.text().catch(()=>null); if(!text) return; try { const json = JSON.parse(text); const name = json.name || `Imported ${Date.now()}`; await createPlaylist(name); const pl = playlists.find(p=>p.name===name) || (await reloadPlaylists(), playlists.find(p=>p.name===name)); const pid = pl?.id; for (const t of json.tracks || []) { await addTrackToDbPlaylist(pid, t) } } catch {} }
+                      inp.click()
+                    }}>Import</Button>
+                  </>
+                )}
               </div>
               <div className="space-y-2">
                 {playlists.map(p => (
@@ -459,6 +516,7 @@ export default function App() {
           </aside>
         </main>
       </div>
+      {paletteOpen && <CommandPalette />}
       {themeOpen && <ThemePanel />}
       <div className="fixed bottom-0 left-0 right-0 border-t border-neutral-800 bg-neutral-950/90 backdrop-blur supports-[backdrop-filter]:bg-neutral-950/60">
         <div className="mx-auto max-w-screen-2xl px-4 h-20 flex items-center gap-4">
