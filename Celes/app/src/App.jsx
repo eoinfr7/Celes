@@ -391,7 +391,7 @@ export default function App() {
     await crossfadeTo(src, options.fadeMs)
     rebuildAudioGraph()
     await applyNormalizationForTrack(track)
-    setCurrentTrack(track)
+      setCurrentTrack(track)
     // Reset Theater video if platform changes or new track
     try {
       const newVid = deriveYouTubeId(track)
@@ -456,6 +456,39 @@ export default function App() {
   }
 
   const activePlaylist = playlists.find(p => p.id === activePlaylistId) || null
+  const [view, setView] = useState('home')
+
+  function openPlaylistPage(pid){ setActivePlaylistId(pid); setView('playlist') }
+
+  function normalizeTrackForPlayback(t){
+    return {
+      id: t.stream_id || t.id,
+      platform: t.platform || (t.type === 'stream' ? (t.platform||'youtube') : 'internetarchive'),
+      title: t.title,
+      artist: t.artist,
+      thumbnail: t.thumbnail_url || t.thumbnail,
+      streamUrl: t.stream_url || t.streamUrl,
+      type: t.type || 'stream'
+    }
+  }
+
+  async function playAllFromPlaylist(pid){
+    const pl = playlists.find(p=>p.id===pid) || activePlaylist
+    if (!pl) return
+    const tracks = (pl.songs||[]).map(normalizeTrackForPlayback)
+    if (tracks.length===0) return
+    setQueue([])
+    await doPlay(tracks[0], { fadeMs: 150 })
+    setQueue(tracks.slice(1))
+  }
+
+  function queueAllFromPlaylist(pid){
+    const pl = playlists.find(p=>p.id===pid) || activePlaylist
+    if (!pl) return
+    const tracks = (pl.songs||[]).map(normalizeTrackForPlayback)
+    if (tracks.length===0) return
+    setQueue(q => [...q, ...tracks])
+  }
 
   const isSwitchingRef = useRef(false)
   function nextFromQueue() {
@@ -1124,6 +1157,9 @@ export default function App() {
               </>
             )}
             {/* Artist view removed */}
+            {view === 'playlist' && (
+              <PlaylistView />
+            )}
             {view === 'downloads' && (
               <DownloadsView />
             )}
@@ -1185,7 +1221,7 @@ export default function App() {
                     <div className="text-xs font-medium truncate">{p.name} <span className="text-muted-foreground">({p.songs?.length || 0})</span></div>
                       </div>
                       <div className="flex items-center gap-2">
-                      <Button variant="ghost" onClick={() => setActivePlaylistId(p.id)}>Open</Button>
+                      <Button variant="ghost" onClick={() => openPlaylistPage(p.id)}>Open</Button>
                         <Button variant="ghost" onClick={async () => { queuePlaylistDownload(p, false) }}>Download</Button>
                         <Button variant="ghost" onClick={async () => { queuePlaylistDownload(p, true) }}>Download Missing</Button>
                         {p.type !== 'system' && (
