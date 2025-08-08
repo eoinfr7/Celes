@@ -80,6 +80,7 @@ export default function App() {
   const audioCtxRef = useRef(null)
   const sourceRef = useRef(null)
   const normalizeGainRef = useRef(null)
+  const analyserRef = useRef(null)
   const filtersRef = useRef([])
   const [eqOn, setEqOn] = useState(false)
   const [eqGains, setEqGains] = useState([0,0,0,0,0,0,0,0,0,0])
@@ -104,7 +105,14 @@ export default function App() {
     src.connect(norm)
     norm.connect(filters[0])
     for (let i=0;i<filters.length-1;i++) filters[i].connect(filters[i+1])
-    filters[filters.length-1].connect(ctx.destination)
+    const last = filters[filters.length-1]
+    last.connect(ctx.destination)
+    // visualizer analyser (tap)
+    const analyser = ctx.createAnalyser()
+    analyser.fftSize = 2048
+    analyser.smoothingTimeConstant = 0.85
+    last.connect(analyser)
+    analyserRef.current = analyser
     sourceRef.current = src
     normalizeGainRef.current = norm
     filtersRef.current = filters
@@ -437,6 +445,36 @@ export default function App() {
       } catch {}
     })()
   }, [currentTrack, lyricsEnabled])
+
+  // Visualizer draw loop for Theater mode
+  useEffect(()=>{
+    if (!theaterOn) return
+    let raf = 0
+    const canvas = document.getElementById('vis')
+    const analyser = analyserRef.current
+    if (!canvas || !analyser) return
+    const ctx2d = canvas.getContext('2d')
+    const dpr = window.devicePixelRatio || 1
+    const resize = ()=>{ canvas.width = canvas.clientWidth*dpr; canvas.height = canvas.clientHeight*dpr }
+    resize(); const onRes=()=>resize(); window.addEventListener('resize', onRes)
+    const data = new Uint8Array(analyser.frequencyBinCount)
+    const draw = ()=>{
+      raf = requestAnimationFrame(draw)
+      analyser.getByteFrequencyData(data)
+      ctx2d.clearRect(0,0,canvas.width, canvas.height)
+      const bars = 96
+      const step = Math.floor(data.length/bars)
+      const w = canvas.width/bars
+      for (let i=0;i<bars;i++){
+        const v = data[i*step]/255
+        const h = v * canvas.height*0.6
+        ctx2d.fillStyle = `hsl(210 90% ${Math.round(30+v*50)}%)`
+        ctx2d.fillRect(i*w, canvas.height-h, w*0.8, h)
+      }
+    }
+    draw()
+    return ()=>{ cancelAnimationFrame(raf); window.removeEventListener('resize', onRes) }
+  }, [theaterOn])
   useEffect(() => {
     const onKey = (e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase()==='k') { e.preventDefault(); setPaletteOpen(v=>!v) } }
     window.addEventListener('keydown', onKey)
@@ -497,6 +535,7 @@ export default function App() {
   )
 
   const [themeOpen, setThemeOpen] = useState(false)
+  const [theaterOn, setTheaterOn] = useState(false)
 
   function applyThemeVars(vars) {
     const root = document.documentElement
@@ -1006,6 +1045,7 @@ export default function App() {
             <input type="range" min={0} max={1} step={0.01} value={volume} onChange={(e) => setVolume(Number(e.target.value))} className="w-32 accent-primary" />
             {showMiniLyric && miniLyric && <div className="text-[11px] text-neutral-400 truncate max-w-[220px]">{miniLyric}</div>}
             <Button variant="ghost" onClick={async()=>{ if(!currentTrack) return; setLyricsOpen(v=>!v); if(!lyricsData){ setLyricsData({ loading:true }); const meta = { artist: currentTrack.artist, title: currentTrack.title, duration: currentTrack.duration }; const l = await window.electronAPI.getLyricsForTrack?.(meta); setLyricsData(l||{plainLyrics:'No lyrics found'}); } }}>Lyrics</Button>
+            <Button variant="ghost" onClick={()=>setTheaterOn(true)}>Theater</Button>
           </div>
         </div>
       </div>
@@ -1027,6 +1067,20 @@ export default function App() {
             )}
             <div className="text-[11px] text-neutral-500 mt-2">Source: {lyricsData?.source || '—'}</div>
             <div className="mt-3 flex justify-end"><Button variant="ghost" onClick={()=>setLyricsOpen(false)}>Close</Button></div>
+          </div>
+        </div>
+      )}
+      {theaterOn && (
+        <div className="fixed inset-0 z-50 bg-black" onClick={()=>setTheaterOn(false)}>
+          <canvas id="vis" className="absolute inset-0 opacity-40" />
+          <div className="relative h-full w-full flex flex-col items-center justify-center gap-6" onClick={(e)=>e.stopPropagation()}>
+            <img src={currentTrack?.thumbnail || 'https://via.placeholder.com/512'} className="w-[36vmin] h-[36vmin] rounded shadow-lg object-cover" alt="art" />
+            <div className="text-3xl font-bold text-white max-w-[80vw] text-center truncate">{currentTrack?.title||'Nothing playing'}</div>
+            <div className="text-lg text-neutral-300 truncate max-w-[70vw]">{currentTrack?.artist||''}</div>
+            <div className="flex items-center gap-6">
+              <button className="px-5 py-3 rounded bg-white/10 hover:bg-white/20 text-white" onClick={togglePlayPause}>{isPlaying? 'Pause':'Play'}</button>
+              <button className="px-5 py-3 rounded bg-white/10 hover:bg-white/20 text-white" onClick={()=>nextFromQueue()}>Next</button>
+            </div>
           </div>
         </div>
       )}
