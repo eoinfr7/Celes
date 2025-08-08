@@ -1138,6 +1138,8 @@ export default function App() {
                 setDockVideoOn(on)
                 if (on) {
                   try {
+                    // Turn off visualizer when enabling video
+                    setDockVisOn(false)
                     let vid = deriveYouTubeId(currentTrack)
                     if (!vid && currentTrack){
                       const q = [currentTrack.artist, currentTrack.title].filter(Boolean).join(' ')
@@ -1149,7 +1151,10 @@ export default function App() {
                     const res = await window.electronAPI.getYouTubeVideoStream?.(vid)
                     const url = res?.streamUrl
                     if (!url) { setDockVideoOn(false); return }
-                    setDockVideoUrl(`celes-stream://proxy?u=${encodeURIComponent(url)}`)
+                    const proxy = `celes-stream://proxy?u=${encodeURIComponent(url)}`
+                    setDockVideoUrl(proxy)
+                    // Proactively load and play
+                    setTimeout(()=>{ try { if (dockVideoRef.current) { dockVideoRef.current.src = proxy; dockVideoRef.current.load(); dockVideoRef.current.play().catch(()=>{}) } } catch {} }, 0)
                   } catch { setDockVideoOn(false) }
                 } else {
                   setDockVideoUrl(null)
@@ -1173,7 +1178,7 @@ export default function App() {
           {(dockVisOn || dockVideoOn) && (
             <div className="mt-2 rounded overflow-hidden border border-neutral-800 bg-black/60" style={{height: 120}}>
               {dockVideoOn ? (
-                <video ref={dockVideoRef} src={dockVideoUrl||''} className="w-full h-full object-contain bg-black" muted playsInline autoPlay onCanPlay={()=>{ try { dockVideoRef.current?.play?.() } catch {} }} />
+                <video ref={dockVideoRef} src={dockVideoUrl||''} className="w-full h-full object-contain bg-black" muted playsInline autoPlay crossOrigin="anonymous" onCanPlay={()=>{ try { dockVideoRef.current?.play?.() } catch {} }} />
               ) : (
                 <canvas id="dock-vis" className="w-full h-full" />
               )}

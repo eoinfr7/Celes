@@ -250,8 +250,8 @@ class MusicPlayerApp {
         }
         // Make sure CORS doesn't block media element usage
         forwarded['access-control-request-private-network'] = 'true';
-        // Ensure Range passthrough for snappy seeks; strip sec-fetch Site headers that can cause 403s
-        delete forwarded['sec-fetch-site']; delete forwarded['sec-fetch-mode']; delete forwarded['sec-fetch-dest'];
+        // Ensure Range passthrough for snappy seeks; strip fetch metadata headers that can cause 403s
+        delete forwarded['sec-fetch-site']; delete forwarded['sec-fetch-mode']; delete forwarded['sec-fetch-dest']; delete forwarded['sec-ch-ua']; delete forwarded['sec-ch-ua-platform'];
         const init = { method: request.method, headers: forwarded, redirect: 'follow' };
         const response = await net.fetch(originalUrl, init);
 
@@ -263,6 +263,9 @@ class MusicPlayerApp {
         const headers = new Headers();
         for (const [k, v] of response.headers.entries()) { headers.set(k, v); }
         if (!headers.get('accept-ranges')) headers.set('accept-ranges', 'bytes');
+        // Allow media element usage across origins
+        headers.set('access-control-allow-origin', '*');
+        headers.set('timing-allow-origin', '*');
         // Content-Disposition may break streaming in some cases; preserve content-type and content-range
         const status = response.status;
         const statusText = response.statusText;
