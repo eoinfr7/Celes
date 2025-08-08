@@ -494,6 +494,7 @@ export default function App() {
           </div>
           <Button variant="ghost" onClick={()=>setThemeOpen(v=>!v)}>Theme</Button>
           <Button variant="ghost" onClick={()=>setSettingsOpen(v=>!v)}>Settings</Button>
+          <Button variant="ghost" onClick={()=>window.electronAPI.openMiniPlayer?.()}>Mini</Button>
           <div className="md:hidden flex-1" />
         </header>
 

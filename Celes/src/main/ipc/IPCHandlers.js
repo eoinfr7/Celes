@@ -21,6 +21,18 @@ class IPCHandlers {
     this.setupNotificationHandlers();
     this.setupUpdateHandlers();
     this.setupStreamingHandlers();
+
+    // Periodically forward now playing info to the mini player (if open)
+    const forwardNowPlaying = async () => {
+      try {
+        const track = await this.streamingService.getCurrentTrack();
+        const win = this.windowManager?.getMiniWindow?.();
+        if (win && !win.isDestroyed()) {
+          win.webContents.send('mini-now-playing', track || null);
+        }
+      } catch {}
+    };
+    setInterval(forwardNowPlaying, 2000);
   }
 
   setupDatabaseHandlers() {
@@ -189,6 +201,14 @@ class IPCHandlers {
 
     ipcMain.handle('window-is-maximized', () => {
       return this.mainWindow.isMaximized();
+    });
+
+    // Mini player
+    ipcMain.handle('open-mini-player', () => {
+      try { this.windowManager.createMiniPlayerWindow(); return { success: true }; } catch (e) { return { success: false, error: e.message } }
+    });
+    ipcMain.handle('close-mini-player', () => {
+      try { this.windowManager.closeMiniPlayerWindow(); return { success: true }; } catch (e) { return { success: false, error: e.message } }
     });
   }
 

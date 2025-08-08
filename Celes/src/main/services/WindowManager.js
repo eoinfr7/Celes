@@ -4,6 +4,7 @@ const path = require('path');
 class WindowManager {
   constructor() {
     this.mainWindow = null;
+    this.miniWindow = null;
   }
 
   createWindow() {
@@ -92,6 +93,47 @@ class WindowManager {
 
   getMainWindow() {
     return this.mainWindow;
+  }
+
+  createMiniPlayerWindow() {
+    if (this.miniWindow && !this.miniWindow.isDestroyed()) {
+      this.miniWindow.show();
+      this.miniWindow.focus();
+      return this.miniWindow;
+    }
+
+    this.miniWindow = new BrowserWindow({
+      width: 360,
+      height: 120,
+      resizable: false,
+      minimizable: false,
+      maximizable: false,
+      alwaysOnTop: true,
+      frame: false,
+      transparent: false,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        preload: path.join(__dirname, '..', '..', '..', 'preload.js')
+      }
+    });
+
+    const miniPath = path.join(__dirname, '..', '..', 'mini', 'mini.html');
+    this.miniWindow.loadFile(miniPath);
+
+    this.miniWindow.on('closed', () => { this.miniWindow = null; });
+    return this.miniWindow;
+  }
+
+  getMiniWindow() {
+    return this.miniWindow;
+  }
+
+  closeMiniPlayerWindow() {
+    if (this.miniWindow && !this.miniWindow.isDestroyed()) {
+      this.miniWindow.close();
+      this.miniWindow = null;
+    }
   }
 
   closeWindow() {
