@@ -71,10 +71,14 @@ export default function App() {
   const currentTrackRef = useRef(null)
   const [crossfadeOn, setCrossfadeOn] = useState(true)
   const [crossfadeMs, setCrossfadeMs] = useState(4000)
+  const [gaplessOn, setGaplessOn] = useState(true)
+  const [normalizeOn, setNormalizeOn] = useState(true)
+  const [targetLufs, setTargetLufs] = useState(-14)
 
   // WebAudio EQ
   const audioCtxRef = useRef(null)
   const sourceRef = useRef(null)
+  const normalizeGainRef = useRef(null)
   const filtersRef = useRef([])
   const [eqOn, setEqOn] = useState(false)
   const [eqGains, setEqGains] = useState([0,0,0,0,0,0,0,0,0,0])
@@ -87,24 +91,56 @@ export default function App() {
     BassBoost: [6,5,4,2,0,-1,-2,-3,-4,-5]
   }
 
+  function buildAudioGraphFor(el){
+    if (!el) return
+    const ctx = audioCtxRef.current || new (window.AudioContext||window.webkitAudioContext)()
+    audioCtxRef.current = ctx
+    const src = ctx.createMediaElementSource(el)
+    const norm = ctx.createGain();
+    norm.gain.value = 1
+    const filters = EQ_BANDS.map((freq)=>{ const f=ctx.createBiquadFilter(); f.type='peaking'; f.frequency.value=freq; f.Q.value=1.1; f.gain.value=0; return f })
+    // chain: src -> norm -> filters... -> dest
+    src.connect(norm)
+    norm.connect(filters[0])
+    for (let i=0;i<filters.length-1;i++) filters[i].connect(filters[i+1])
+    filters[filters.length-1].connect(ctx.destination)
+    sourceRef.current = src
+    normalizeGainRef.current = norm
+    filtersRef.current = filters
+  }
+
   function ensureAudioGraph(){
     const el = audioRef.current
     if (!el) return
-    if (!audioCtxRef.current){
-      const ctx = new (window.AudioContext||window.webkitAudioContext)()
-      const src = ctx.createMediaElementSource(el)
-      const filters = EQ_BANDS.map((freq)=>{ const f=ctx.createBiquadFilter(); f.type='peaking'; f.frequency.value=freq; f.Q.value=1.1; f.gain.value=0; return f })
-      src.connect(filters[0])
-      for (let i=0;i<filters.length-1;i++) filters[i].connect(filters[i+1])
-      filters[filters.length-1].connect(ctx.destination)
-      audioCtxRef.current = ctx
-      sourceRef.current = src
-      filtersRef.current = filters
+    if (!audioCtxRef.current || !sourceRef.current){
+      buildAudioGraphFor(el)
     }
+  }
+
+  function rebuildAudioGraph(){
+    try {
+      const ctx = audioCtxRef.current
+      if (!ctx) { ensureAudioGraph(); return }
+      // let GC handle old nodes; just rebuild for new element
+      buildAudioGraphFor(audioRef.current)
+      if (eqOn) applyEqGains(eqGains)
+    } catch {}
   }
 
   function applyEqGains(gains){
     filtersRef.current.forEach((f,i)=>{ try{ f.gain.value = gains[i]||0 }catch{}})
+  }
+
+  async function applyNormalizationForTrack(track){
+    try {
+      if (!normalizeOn || !track) { if (normalizeGainRef.current) normalizeGainRef.current.gain.value = 1; return }
+      const res = await window.electronAPI.getTrackLoudness?.(track.id, track.platform||'youtube', { force:false })
+      const measured = res?.integratedLufs
+      const target = Number(targetLufs) || -14
+      const deltaDb = Number.isFinite(measured) ? (target - measured) : 0
+      const linear = Math.pow(10, deltaDb/20)
+      if (normalizeGainRef.current) normalizeGainRef.current.gain.value = linear
+    } catch {}
   }
 
   function setEqPreset(name){
@@ -153,6 +189,10 @@ export default function App() {
       const toProxy = (u) => `celes-stream://proxy?u=${encodeURIComponent(u)}`
       const res = await window.electronAPI.getStreamUrlWithFallback(next.id, next.platform||'youtube')
       if (res?.streamUrl) { next._prefetched = toProxy(res.streamUrl) }
+      if (!crossfadeOn && gaplessOn && next._prefetched && nextAudioRef.current) {
+        nextAudioRef.current.src = next._prefetched
+        try { nextAudioRef.current.load() } catch {}
+      }
     } catch {}
   }
 
@@ -212,7 +252,7 @@ export default function App() {
     const a = audioRef.current
     if (!a) return
     const toProxy = (u) => `celes-stream://proxy?u=${encodeURIComponent(u)}`
-    let src = track?.streamUrl ? toProxy(track.streamUrl) : null
+    let src = track?._prefetched || (track?.streamUrl ? toProxy(track.streamUrl) : null)
     if (!src) {
       const prefPlat = track.platform || 'internetarchive'
       const result = await window.electronAPI.getStreamUrlWithFallback(track.id, prefPlat).catch(() => null)
@@ -221,6 +261,8 @@ export default function App() {
     if (!src) return
     ensureAudioGraph(); if (eqOn) applyEqGains(eqGains)
     await crossfadeTo(src)
+    rebuildAudioGraph()
+    await applyNormalizationForTrack(track)
     setCurrentTrack(track)
     prefetchForQueue()
   }
@@ -344,6 +386,7 @@ export default function App() {
 
   useEffect(() => { try { localStorage.setItem('celes.volume', String(volume)) } catch {} ; if (audioRef.current) audioRef.current.volume = volume }, [volume])
   useEffect(() => { window.electronAPI.streamingHealthCheck?.() }, [])
+  useEffect(() => { if (currentTrack) applyNormalizationForTrack(currentTrack) }, [normalizeOn, targetLufs])
   useEffect(() => {
     const onKey = (e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase()==='k') { e.preventDefault(); setPaletteOpen(v=>!v) } }
     window.addEventListener('keydown', onKey)
@@ -517,6 +560,12 @@ export default function App() {
           <div>
             <div className="mb-1">Crossfade Duration (ms)</div>
             <input type="number" className="w-full bg-neutral-950 border border-neutral-800 rounded px-2 py-1" value={crossfadeMs} onChange={(e)=>setCrossfadeMs(Number(e.target.value)||0)} />
+          </div>
+          <div className="flex items-center justify-between"><div>Gapless (preload next)</div><input type="checkbox" checked={gaplessOn} onChange={(e)=>setGaplessOn(e.target.checked)} /></div>
+          <div className="flex items-center justify-between"><div>Normalize loudness</div><input type="checkbox" checked={normalizeOn} onChange={(e)=>setNormalizeOn(e.target.checked)} /></div>
+          <div>
+            <div className="mb-1">Target LUFS</div>
+            <input type="number" step={1} min={-30} max={-8} className="w-full bg-neutral-950 border border-neutral-800 rounded px-2 py-1" value={targetLufs} onChange={(e)=>setTargetLufs(Number(e.target.value)||-14)} />
           </div>
           <div className="flex items-center justify-between"><div>Equalizer</div><input type="checkbox" checked={eqOn} onChange={(e)=>{ setEqOn(e.target.checked); if(e.target.checked) ensureAudioGraph(); }} /></div>
           <div className="flex gap-2 items-center">
