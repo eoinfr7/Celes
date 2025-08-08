@@ -37,6 +37,21 @@ class StreamingService extends BaseStreamingService {
     });
   }
 
+  async fetchText(url, timeoutMs = 12000) {
+    const https = require('https');
+    return new Promise((resolve, reject) => {
+      try {
+        const req = https.get(url, { timeout: timeoutMs, headers: { 'user-agent': 'Mozilla/5.0 Celes' } }, (res) => {
+          let data = '';
+          res.on('data', c => { data += c; });
+          res.on('end', () => resolve(data));
+        });
+        req.on('error', reject);
+        req.on('timeout', () => { try { req.destroy(); } catch {} reject(new Error('timeout')); });
+      } catch (e) { reject(e); }
+    });
+  }
+
   async searchYouTubePiped(query, limit = 20) {
     const instances = [
       'https://pipedapi.kavin.rocks',
@@ -510,21 +525,54 @@ class StreamingService extends BaseStreamingService {
     } catch { return null; }
   }
 
+  parseHumanNumber(text) {
+    try {
+      const s = String(text || '').trim().toLowerCase().replace(/[,\s]/g, '');
+      if (!s) return null;
+      if (s.endsWith('m')) return Math.round(parseFloat(s) * 1_000_000);
+      if (s.endsWith('k')) return Math.round(parseFloat(s) * 1_000);
+      const n = parseInt(s, 10);
+      return Number.isFinite(n) ? n : null;
+    } catch { return null; }
+  }
+
+  async getSoundCloudFollowers(artistName) {
+    try {
+      // Heuristic: find a track by the artist, derive the user slug, open the profile HTML and parse followers_count
+      const tracks = await this.searchMusicWithFallback(artistName, 'soundcloud', 5).catch(()=>[]);
+      const first = (tracks || []).find(t => (t.platform === 'soundcloud') && t.url);
+      if (!first) return null;
+      const u = new URL(first.url);
+      const parts = u.pathname.split('/').filter(Boolean);
+      const userSlug = parts[0];
+      if (!userSlug) return null;
+      const html = await this.fetchText(`https://soundcloud.com/${userSlug}`).catch(()=>null);
+      if (!html) return null;
+      const mJson = html.match(/\"followers_count\"\s*:\s*(\d+)/);
+      if (mJson && mJson[1]) return parseInt(mJson[1], 10);
+      const mTxt = html.match(/([0-9.,]+)\s*followers/i);
+      if (mTxt && mTxt[1]) return this.parseHumanNumber(mTxt[1]);
+      return null;
+    } catch { return null; }
+  }
+
   async getArtistOverview(artistName, limits = { top: 10, similar: 12 }) {
     try {
-      const [topTracks, similarArtists, wiki, ytSubs] = await Promise.all([
+      const [topTracks, similarArtists, wiki, ytSubs, scFollows] = await Promise.all([
         this.getArtistTopTracks(artistName, limits.top || 10),
         this.getSimilarArtists(artistName, limits.similar || 12),
         this.getWikipediaSummary(artistName),
-        this.getYouTubeSubscribersEstimate(artistName)
+        this.getYouTubeSubscribersEstimate(artistName),
+        this.getSoundCloudFollowers(artistName)
       ]);
       const headerImage = (topTracks[0] && (topTracks[0].thumbnail || '')) || (wiki?.thumbnail || '');
       const about = wiki || null;
-      const monthlyListeners = ytSubs || null; // approximate via YT subscribers if available
-      return { artist: artistName, headerImage, topTracks, similarArtists, about, monthlyListeners };
+      const followers = (ytSubs || 0) + (scFollows || 0) || null;
+      const followersBreakdown = { youtube: ytSubs || null, soundcloud: scFollows || null };
+      return { artist: artistName, headerImage, topTracks, similarArtists, about, followers, followersBreakdown };
     } catch (e) {
       console.error('Error getting artist overview:', e);
-      return { artist: artistName, headerImage: '', topTracks: [], similarArtists: [], about: null, monthlyListeners: null };
+      return { artist: artistName, headerImage: '', topTracks: [], similarArtists: [], about: null, followers: null, followersBreakdown: {} };
     }
   }
 }

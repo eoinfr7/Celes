@@ -599,13 +599,13 @@ export default function App() {
                 <div className="flex items-center gap-3">
                   <Button onClick={()=>{ const top=artistView.data?.topTracks?.[0]; if(top) doPlay(top)}}>Play</Button>
                   <Button variant="ghost" onClick={async ()=>{ await window.electronAPI.followArtistStreaming?.(artistView.name); alert('Following'); }}>Follow</Button>
-                  {artistView.data?.monthlyListeners && (
-                    <div className="text-xs text-neutral-400">~{artistView.data.monthlyListeners.toLocaleString()} listeners</div>
+                  {artistView.data?.followers && (
+                    <div className="text-xs text-neutral-400">{artistView.data.followers.toLocaleString()} followers <span className="text-neutral-500">(YT {artistView.data.followersBreakdown?.youtube?.toLocaleString?.()||'—'}, SC {artistView.data.followersBreakdown?.soundcloud?.toLocaleString?.()||'—'})</span></div>
                   )}
                 </div>
                 {artistView.data?.about?.extract && (
                   <div className="bg-neutral-900 border border-neutral-800 rounded p-3">
-                    <div className="text-sm font-semibold mb-1">About</div>
+                    <div className="text-sm font-semibold mb-1">About (auto)</div>
                     <div className="text-xs text-neutral-300 leading-relaxed">{artistView.data.about.extract}</div>
                     <div className="text-[11px] text-neutral-500 mt-1">Source: {artistView.data.about.source}</div>
                   </div>
