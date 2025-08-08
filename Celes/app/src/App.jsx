@@ -50,7 +50,6 @@ export default function App() {
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
   const [view, setView] = useState('home')
-  const [artistView, setArtistView] = useState(null)
   const platforms = useMemo(() => ['soundcloud', 'internetarchive'], [])
   const [platform] = useState('soundcloud')
   const [queue, setQueue] = useState([])
@@ -461,6 +460,14 @@ export default function App() {
     })
   }
 
+  function previousOrRestart() {
+    const a = getActiveEl()
+    if (!a) return
+    if ((a.currentTime || 0) > 3) { try { a.currentTime = 0 } catch {} ; return }
+    // No full history stack; replay currentTrack or do nothing
+    if (currentTrack) { void doPlay(currentTrack, { fadeMs: 150 }) }
+  }
+
   function togglePlayPause() {
     const audio = audioRef.current
     if (!audio) return
@@ -630,6 +637,25 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  useEffect(()=>{
+    const onHotkeys = (e)=>{
+      try{
+        if (e.target && (e.target.tagName==='INPUT' || e.target.tagName==='TEXTAREA' || e.target.isContentEditable)) return
+        const k = e.key.toLowerCase()
+        if (k===' '){ e.preventDefault(); togglePlayPause(); return }
+        if (k==='k'){ e.preventDefault(); togglePlayPause(); return }
+        if (k==='j'){ e.preventDefault(); const el=getActiveEl(); if(el) el.currentTime = Math.max(0, (el.currentTime||0)-5) ; return }
+        if (k==='l'){ e.preventDefault(); const el=getActiveEl(); if(el) el.currentTime = Math.min((el.duration||0), (el.currentTime||0)+10) ; return }
+        if (k==='arrowleft'){ const el=getActiveEl(); if(el) el.currentTime = Math.max(0, (el.currentTime||0)-5) }
+        if (k==='arrowright'){ const el=getActiveEl(); if(el) el.currentTime = Math.min((el.duration||0), (el.currentTime||0)+5) }
+        if (k==='arrowup'){ e.preventDefault(); setVolume(v=> Math.min(1, v+0.05)) }
+        if (k==='arrowdown'){ e.preventDefault(); setVolume(v=> Math.max(0, v-0.05)) }
+      }catch{}
+    }
+    window.addEventListener('keydown', onHotkeys)
+    return ()=> window.removeEventListener('keydown', onHotkeys)
+  }, [currentTrack])
+
   const SectionCard = ({ title, items }) => (
     <div className="bg-surface border border-border rounded p-3">
       <div className="text-sm font-semibold mb-2">{title}</div>
@@ -638,7 +664,7 @@ export default function App() {
           <div key={t.id} className="bg-surface-muted border border-border rounded p-3 flex flex-col gap-2">
             <img alt={t.title} src={t.thumbnail || 'https://via.placeholder.com/300x200/4a9eff/ffffff?text=♫'} className="w-full h-36 object-cover rounded" />
             <div className="text-sm font-medium line-clamp-2">{t.title}</div>
-            <div className="text-xs text-muted-foreground"><button className="underline" onClick={()=>loadArtist(t.artist)}>{t.artist}</button> • {t.platform}</div>
+            <div className="text-xs text-muted-foreground">{t.artist} • {t.platform}</div>
             <div className="flex items-center justify-between mt-1">
               <Button className="flex-1" onClick={() => doPlay(t)}>Play</Button>
               <span className="flex items-center gap-2 ml-2">
@@ -705,12 +731,7 @@ export default function App() {
     } catch {}
   }, [])
 
-  async function loadArtist(name){
-    if (!name) return
-    const data = await window.electronAPI.getArtistOverview?.(name, { top: 10, similar: 12 }, { force:false })
-    setArtistView({ name, data })
-    setView('artist')
-  }
+  // Artist pages removed per request
 
   function ThemePanel() {
     const [primary, setPrimary] = useState(getComputedStyle(document.documentElement).getPropertyValue('--primary'))
@@ -967,7 +988,17 @@ export default function App() {
           <section className="space-y-3">
             {view === 'home' && (
               <>
-                {homeLoading && <div className="text-sm text-neutral-400">Loading mixes…</div>}
+                {homeLoading && (
+                  <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}>
+                    {Array.from({length: 6}).map((_,i)=> (
+                      <div key={`home_sk_${i}`} className="bg-surface border border-border rounded p-3 animate-pulse">
+                        <div className="w-full h-36 rounded bg-surface-muted" />
+                        <div className="h-4 mt-2 w-3/4 bg-surface-muted rounded" />
+                        <div className="h-3 mt-1 w-1/2 bg-surface-muted rounded" />
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {!homeLoading && (<>
                   <SectionCard title={`Daily Mix • ${chartsDate}`} items={dailyMix} />
                   <SectionCard title={`YouTube Top 50 • ${chartsDate}`} items={chartsYT} />
@@ -980,7 +1011,14 @@ export default function App() {
               <>
                 {!results.length && <div className="text-sm text-muted-foreground">Type anything – e.g. “calming piano at night”, “vocal jazz 50s”, “beethoven sonata 14”.</div>}
               <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
-              {results.map((t) => (
+              {loading && Array.from({length: 8}).map((_,i)=> (
+                <div key={`sk_${i}`} className="bg-surface border border-border rounded p-3 animate-pulse">
+                  <div className="w-full h-36 rounded bg-surface-muted" />
+                  <div className="h-4 mt-2 w-3/4 bg-surface-muted rounded" />
+                  <div className="h-3 mt-1 w-1/2 bg-surface-muted rounded" />
+                </div>
+              ))}
+              {!loading && results.map((t) => (
                 <div key={t.id} className="bg-surface border border-border rounded p-3 flex flex-col gap-2">
                   <img alt={t.title} src={t.thumbnail || 'https://via.placeholder.com/300x200/4a9eff/ffffff?text=♫'} className="w-full h-36 object-cover rounded" />
                   <div className="text-sm font-medium line-clamp-2">{t.title}</div>
@@ -1029,46 +1067,7 @@ export default function App() {
                 </div>
               </>
             )}
-            {view === 'artist' && artistView && (
-              <div className="space-y-4">
-                <div className="h-40 rounded bg-surface border border-border overflow-hidden flex items-end p-4" style={{backgroundImage:`url(${artistView.data?.headerImage||''})`, backgroundSize:'cover', backgroundPosition:'center'}}>
-                  <div className="text-3xl font-extrabold drop-shadow-md">{artistView.name}</div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Button onClick={()=>{ const top=artistView.data?.topTracks?.[0]; if(top) doPlay(top)}}>Play</Button>
-                  <Button variant="ghost" onClick={async ()=>{ await window.electronAPI.followArtistStreaming?.(artistView.name); alert('Following'); }}>Follow</Button>
-                  {artistView.data?.followers && (
-                    <div className="text-xs text-muted-foreground">{artistView.data.followers.toLocaleString()} followers <span className="text-muted-foreground/80">(YT {artistView.data.followersBreakdown?.youtube?.toLocaleString?.()||'—'}, SC {artistView.data.followersBreakdown?.soundcloud?.toLocaleString?.()||'—'})</span></div>
-                  )}
-                </div>
-                {artistView.data?.about?.extract && (
-                  <div className="bg-surface border border-border rounded p-3">
-                    <div className="text-sm font-semibold mb-1">About (auto)</div>
-                    <div className="text-xs text-foreground/80 leading-relaxed">{artistView.data.about.extract}</div>
-                    <div className="text-[11px] text-muted-foreground mt-1">Source: {artistView.data.about.source}</div>
-                    <div className="mt-2">
-                      <Button variant="ghost" onClick={async ()=>{ const data = await window.electronAPI.getArtistOverview?.(artistView.name, { top: 10, similar: 12 }, { force:true }); setArtistView({ name: artistView.name, data }); }}>Refresh</Button>
-                    </div>
-                  </div>
-                )}
-                <SectionCard title="Popular" items={artistView.data?.topTracks||[]} />
-                <div className="bg-surface border border-border rounded p-3">
-                  <div className="text-sm font-semibold mb-2">Fans also like</div>
-                  <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}>
-                    {(artistView.data?.similarArtists||[]).map((a,i)=> (
-                      <div key={`${a.name}_${i}`} className="bg-surface-muted border border-border rounded p-3 flex flex-col gap-2">
-                        <img alt={a.name} src={a.thumbnail || 'https://via.placeholder.com/300x200/4a9eff/ffffff?text=★'} className="w-full h-36 object-cover rounded" />
-                        <div className="text-sm font-medium line-clamp-2">{a.name}</div>
-                  <div className="flex gap-2">
-                          <Button className="mt-1" onClick={()=>loadArtist(a.name)}>Open</Button>
-                          {a.sampleTrack && <Button className="mt-1" variant="ghost" onClick={()=>doPlay(a.sampleTrack)}>Play sample</Button>}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-            </div>
-            )}
+            {/* Artist view removed */}
             {view === 'downloads' && (
               <DownloadsView />
             )}
@@ -1251,7 +1250,7 @@ export default function App() {
           </div>
           <div className="flex-1 flex flex-col gap-1 items-center">
             <div className="flex items-center gap-4">
-              <button className="p-2 rounded hover:bg-surface-muted" onClick={() => nextFromQueue()} aria-label="Previous"><SkipBack size={18} /></button>
+              <button className="p-2 rounded hover:bg-surface-muted" onClick={previousOrRestart} aria-label="Previous"><SkipBack size={18} /></button>
               <button className="p-3 rounded-full bg-primary text-primary-foreground hover:bg-primary/90" onClick={togglePlayPause} aria-label="Play/Pause">{isPlaying ? <Pause size={18}/> : <Play size={18}/>}</button>
               <button className="p-2 rounded hover:bg-surface-muted" onClick={() => nextFromQueue()} aria-label="Next"><SkipForward size={18} /></button>
             </div>

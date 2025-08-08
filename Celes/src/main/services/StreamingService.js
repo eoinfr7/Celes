@@ -1,3 +1,4 @@
+// Use the enhanced streaming service (this file extends functionality)
 const BaseStreamingService = require('./StreamingService.js.backup');
 const { app } = require('electron');
 const fs = require('fs');
@@ -135,6 +136,31 @@ class StreamingService extends BaseStreamingService {
     return [];
   }
 
+  // Unified search override: prefer Piped for YouTube; disable SoundCloud; support Internet Archive
+  async searchMusic(query, platform = 'youtube', limit = 20) {
+    if (platform === 'internetarchive') {
+      const cacheKey = `${platform}:${query}:${limit}`;
+      if (this.searchCache && this.searchCache.has(cacheKey)) {
+        const cached = this.searchCache.get(cacheKey);
+        if (Date.now() - cached.timestamp < 300000) return cached.results;
+      }
+      const results = await this.searchInternetArchive(query, limit);
+      if (this.searchCache) this.searchCache.set(cacheKey, { results, timestamp: Date.now() });
+      return results;
+    }
+    if (platform === 'soundcloud') {
+      // Disable SC search to avoid 403s/noise for now
+      return [];
+    }
+    if (platform === 'youtube') {
+      try {
+        const results = await this.searchYouTubePiped(query, limit);
+        if (results && results.length) return results;
+      } catch {}
+    }
+    return super.searchMusic(query, platform, limit);
+  }
+
   async getYouTubeStreamUrlViaPiped(videoId) {
     const instances = [
       'https://pipedapi.kavin.rocks',
@@ -260,24 +286,7 @@ class StreamingService extends BaseStreamingService {
     return super.searchMusic(query, platform, limit);
   }
 
-  async getSoundCloudStreamUrl(trackIdOrUrl) {
-    try {
-      let permalink = null;
-      if (typeof trackIdOrUrl === 'string' && trackIdOrUrl.startsWith('http')) {
-        permalink = trackIdOrUrl;
-      } else {
-        const cached = this.findCachedTrack(trackIdOrUrl);
-        if (cached && cached.url) permalink = cached.url;
-      }
-      if (!permalink) return null;
-      const mod = (require('soundcloud-downloader') || {}).default || require('soundcloud-downloader');
-      if (!mod || !mod.getAudioUrl) return null;
-      const url = await mod.getAudioUrl(permalink).catch(() => null);
-      return url;
-    } catch {
-      return null;
-    }
-  }
+  async getSoundCloudStreamUrl(trackIdOrUrl) { return null }
 
   async getStreamUrl(trackId, platform = 'internetarchive') {
     // Internet Archive: return pre-resolved URL if present
@@ -285,9 +294,7 @@ class StreamingService extends BaseStreamingService {
       const cached = this.findCachedTrack(trackId);
       return cached?.streamUrl || null;
     }
-    if (platform === 'soundcloud') {
-      return this.getSoundCloudStreamUrl(trackId);
-    }
+    if (platform === 'soundcloud') { return null }
     if (platform === 'youtube' || (typeof trackId === 'string' && /^[a-zA-Z0-9_-]{11}$/.test(trackId))) {
       // Robust path: try direct ytdl first, then Piped as fallback (some Piped instances fail)
       const vid = typeof trackId === 'string' && trackId.length === 11 ? trackId : String(trackId);
@@ -585,24 +592,7 @@ class StreamingService extends BaseStreamingService {
     return results;
   }
 
-  async searchMusic(query, platform = 'youtube', limit = 20) {
-    if (platform === 'internetarchive') {
-      const cacheKey = `${platform}:${query}:${limit}`;
-      if (this.searchCache && this.searchCache.has(cacheKey)) {
-        const cached = this.searchCache.get(cacheKey);
-        if (Date.now() - cached.timestamp < 300000) {
-          return cached.results;
-        }
-      }
-      const results = await this.searchInternetArchive(query, limit);
-      if (this.searchCache) {
-        this.searchCache.set(cacheKey, { results, timestamp: Date.now() });
-      }
-      return results;
-    }
-
-    return super.searchMusic(query, platform, limit);
-  }
+  // removed duplicate searchMusic implementation
 
   async searchMusicWithFallback(query, primaryPlatform = 'youtube', limit = 20) {
     const tried = new Set();
@@ -669,7 +659,7 @@ class StreamingService extends BaseStreamingService {
     // If no URL and fallback disabled, stop here
     if (!this.fallbackEnabled) return null;
     // Otherwise, try other platforms in order excluding the primary
-    const order = ['youtube', 'soundcloud', 'internetarchive'].filter(p => p !== primaryPlatform);
+    const order = ['youtube', 'internetarchive'].filter(p => p !== primaryPlatform);
     for (const p of order) {
       try {
         const url = await this.getStreamUrl(trackId, p);
