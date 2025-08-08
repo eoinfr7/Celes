@@ -91,6 +91,7 @@ export default function App() {
   const [downloadDir, setDownloadDir] = useState('')
   const [playlistDl, setPlaylistDl] = useState({})
   const playlistDlRef = useRef(new Map())
+  const [theaterOn, setTheaterOn] = useState(false)
 
   // WebAudio EQ
   const audioCtxRef = useRef(null)
@@ -551,7 +552,6 @@ export default function App() {
   )
 
   const [themeOpen, setThemeOpen] = useState(false)
-  const [theaterOn, setTheaterOn] = useState(false)
 
   function applyThemeVars(vars) {
     const root = document.documentElement
