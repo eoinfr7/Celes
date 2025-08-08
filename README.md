@@ -1,8 +1,19 @@
 # Celes — a beautiful, privacy‑minded desktop music player
 
-Play the internet your way. Celes blends a gorgeous, Spotify‑grade UI with fast, reliable streaming (YouTube first, no login), powerful playlists, and thoughtful touches that make listening feel effortless.
+Play the internet your way. Celes pairs a drop‑dead‑gorgeous interface with fast, reliable streaming and playlists that actually scale. No accounts, no trackers—just press play.
 
-## Why you’ll love it
+<p align="center">
+  <img alt="Celes hero" src="docs/hero.gif" width="820" />
+  <br/>
+  <sub>Explore, queue, and fall into the music. (GIF/screenshot here)</sub>
+  <br/>
+  <img alt="Celes screenshot" src="docs/screenshot.png" width="820" />
+  <br/>
+  <sub>Theater mode with optional ad‑free video. Playlists with Play All / Queue All.</sub>
+  <br/>
+</p>
+
+## Why it slaps
 
 - Stunning, themeable UI: modern tokens, smooth micro‑interactions, focus rings, and accessible contrast. Make it yours.
 - Instant search and playback: tight debounced search, snappy seek, proper previous, keyboard shortcuts (Space/K, J/L/←/→, ↑/↓).
@@ -13,7 +24,7 @@ Play the internet your way. Celes blends a gorgeous, Spotify‑grade UI with fas
 - Reliable streaming: hardened proxy, smart headers, instance rotation, strict YouTube playback with Internet Archive fallback.
 - Local + downloads: save streams to disk, manage a download queue, and keep listening offline.
 
-## Headline features
+## What you get
 
 - Explore: New Releases and Trending powered by YouTube, filtered for quality.
 - Powerful queue: Play Next, drag/move (basic up/down today), radio‑style auto‑queue similar tracks.
