@@ -223,11 +223,15 @@ class StreamingService extends BaseStreamingService {
       return this.getSoundCloudStreamUrl(trackId);
     }
     if (platform === 'youtube' || (typeof trackId === 'string' && /^[a-zA-Z0-9_-]{11}$/.test(trackId))) {
-      // Try Piped first, then base (ytdl)
+      // Robust path: try direct ytdl first, then Piped as fallback (some Piped instances fail)
       const vid = typeof trackId === 'string' && trackId.length === 11 ? trackId : String(trackId);
+      try {
+        const direct = await super.getStreamUrl(vid, 'youtube');
+        if (direct) return direct;
+      } catch {}
       const viaPiped = await this.getYouTubeStreamUrlViaPiped(vid);
       if (viaPiped) return viaPiped;
-      return super.getStreamUrl(vid, 'youtube');
+      return null;
     }
     return null;
   }
