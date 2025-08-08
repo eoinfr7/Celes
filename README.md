@@ -3,11 +3,9 @@
 Play the internet your way. Celes pairs a drop‑dead‑gorgeous interface with fast, reliable streaming and playlists that actually scale. No accounts, no trackers—just press play.
 
 <p align="center">
-  <img alt="Celes hero" src="docs/hero.gif" width="820" />
-  <br/>
   <sub>Explore, queue, and fall into the music. (GIF/screenshot here)</sub>
   <br/>
-  <img alt="Celes screenshot" src="docs/screenshot.png" width="820" />
+<img width="1710" height="1069" alt="Screenshot 2025-08-08 at 5 59 25 AM" src="https://github.com/user-attachments/assets/7762b10b-dcaa-40f2-9381-9d372c18dfa2" />
   <br/>
   <sub>Theater mode with optional ad‑free video. Playlists with Play All / Queue All.</sub>
   <br/>
