@@ -204,8 +204,32 @@ class StreamingService extends BaseStreamingService {
     try {
       const vid = String(videoId || '').slice(0, 11);
       if (!/^[a-zA-Z0-9_-]{11}$/.test(vid)) return null;
+      // Prefer progressive MP4 via ytdl-core when available for best compatibility
+      const viaYtdl = await this.getYouTubeVideoStreamViaYtdl(vid).catch(()=>null);
+      if (viaYtdl) return { streamUrl: viaYtdl };
       const viaPiped = await this.getYouTubeVideoStreamUrlViaPiped(vid);
       if (viaPiped) return { streamUrl: viaPiped };
+      return null;
+    } catch { return null }
+  }
+
+  async getYouTubeVideoStreamViaYtdl(videoId) {
+    try {
+      const ytdl = require('ytdl-core');
+      const info = await ytdl.getInfo(videoId);
+      const formats = (info && info.formats) || [];
+      // Prefer progressive (audio+video) MP4 for Electron <video> compatibility
+      const progressive = formats
+        .filter(f => f.hasVideo && f.hasAudio && !f.isHLS && !f.isDashMPD)
+        .sort((a,b)=> (parseInt((b.qualityLabel||'').replace(/[^0-9]/g,''))||0) - (parseInt((a.qualityLabel||'').replace(/[^0-9]/g,''))||0));
+      const mp4Prog = progressive.find(f => /mp4/i.test(f.container||'') || /mp4|avc1/i.test(f.mimeType||'')) || progressive[0] || null;
+      if (mp4Prog && mp4Prog.url) return mp4Prog.url;
+      // Fallback to best video-only stream
+      const videoOnly = formats
+        .filter(f => f.hasVideo && !f.hasAudio && !f.isHLS && !f.isDashMPD)
+        .sort((a,b)=> (parseInt((b.qualityLabel||'').replace(/[^0-9]/g,''))||0) - (parseInt((a.qualityLabel||'').replace(/[^0-9]/g,''))||0));
+      const best = videoOnly[0];
+      if (best && best.url) return best.url;
       return null;
     } catch { return null }
   }
