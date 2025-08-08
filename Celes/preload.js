@@ -44,8 +44,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   windowMaximize: () => ipcRenderer.invoke('window-maximize'),
   windowClose: () => ipcRenderer.invoke('window-close'),
   windowIsMaximized: () => ipcRenderer.invoke('window-is-maximized'),
-  openMiniPlayer: () => ipcRenderer.invoke('open-mini-player'),
-  closeMiniPlayer: () => ipcRenderer.invoke('close-mini-player'),
+  // mini window removed; use in-app dock instead
   
   // Custom overlay notifications
   showOverlayNotification: (songData) => ipcRenderer.invoke('show-overlay-notification', songData),

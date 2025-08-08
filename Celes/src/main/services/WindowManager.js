@@ -95,48 +95,7 @@ class WindowManager {
     return this.mainWindow;
   }
 
-  createMiniPlayerWindow() {
-    if (this.miniWindow && !this.miniWindow.isDestroyed()) {
-      this.miniWindow.show();
-      this.miniWindow.focus();
-      return this.miniWindow;
-    }
-
-    this.miniWindow = new BrowserWindow({
-      width: 360,
-      height: 120,
-      resizable: true,
-      minimizable: false,
-      maximizable: false,
-      alwaysOnTop: true,
-      frame: false,
-      transparent: false,
-      show: true,
-      webPreferences: {
-        nodeIntegration: false,
-        contextIsolation: true,
-        preload: path.join(__dirname, '..', '..', '..', 'preload.js')
-      }
-    });
-
-    const miniPath = path.join(__dirname, '..', '..', 'mini', 'mini.html');
-    this.miniWindow.loadFile(miniPath);
-    try { this.miniWindow.show() } catch {}
-
-    this.miniWindow.on('closed', () => { this.miniWindow = null; });
-    return this.miniWindow;
-  }
-
-  getMiniWindow() {
-    return this.miniWindow;
-  }
-
-  closeMiniPlayerWindow() {
-    if (this.miniWindow && !this.miniWindow.isDestroyed()) {
-      this.miniWindow.close();
-      this.miniWindow = null;
-    }
-  }
+  // Mini window removed; using in-app dock instead
 
   closeWindow() {
     if (this.mainWindow) {

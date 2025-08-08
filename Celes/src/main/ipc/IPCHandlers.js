@@ -220,12 +220,7 @@ class IPCHandlers {
     });
 
     // Mini player
-    ipcMain.handle('open-mini-player', () => {
-      try { this.windowManager?.createMiniPlayerWindow?.(); return { success: true }; } catch (e) { return { success: false, error: e.message } }
-    });
-    ipcMain.handle('close-mini-player', () => {
-      try { this.windowManager.closeMiniPlayerWindow(); return { success: true }; } catch (e) { return { success: false, error: e.message } }
-    });
+    // mini window removed; using in-app dock
 
     // Bridge generic commands from mini → main renderer
     ipcMain.handle('renderer-command', async (_event, cmd, args) => {
