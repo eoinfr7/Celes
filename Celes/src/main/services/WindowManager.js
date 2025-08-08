@@ -105,12 +105,13 @@ class WindowManager {
     this.miniWindow = new BrowserWindow({
       width: 360,
       height: 120,
-      resizable: false,
+      resizable: true,
       minimizable: false,
       maximizable: false,
       alwaysOnTop: true,
       frame: false,
       transparent: false,
+      show: true,
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
@@ -120,8 +121,7 @@ class WindowManager {
 
     const miniPath = path.join(__dirname, '..', '..', 'mini', 'mini.html');
     this.miniWindow.loadFile(miniPath);
-    // ensure ready-to-show
-    this.miniWindow.once('ready-to-show', ()=>{ try { this.miniWindow.show() } catch {} })
+    try { this.miniWindow.show() } catch {}
 
     this.miniWindow.on('closed', () => { this.miniWindow = null; });
     return this.miniWindow;

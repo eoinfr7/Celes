@@ -987,7 +987,7 @@ export default function App() {
                       <div key={`${a.name}_${i}`} className="bg-neutral-900/60 border border-neutral-800 rounded p-3 flex flex-col gap-2">
                         <img alt={a.name} src={a.thumbnail || 'https://via.placeholder.com/300x200/4a9eff/ffffff?text=★'} className="w-full h-36 object-cover rounded" />
                         <div className="text-sm font-medium line-clamp-2">{a.name}</div>
-                        <div className="flex gap-2">
+                  <div className="flex gap-2">
                           <Button className="mt-1" onClick={()=>loadArtist(a.name)}>Open</Button>
                           {a.sampleTrack && <Button className="mt-1" variant="ghost" onClick={()=>doPlay(a.sampleTrack)}>Play sample</Button>}
                         </div>
@@ -1166,8 +1166,15 @@ export default function App() {
               <Button variant="ghost" onClick={async ()=>{
                 try {
                   if (!videoOn) {
-                    const vid = deriveYouTubeId(currentTrack)
-                    if (!vid) { alert('Video only for YouTube tracks'); return }
+                    let vid = deriveYouTubeId(currentTrack)
+                    if (!vid) {
+                      // Fallback: search YouTube for this track
+                      const q = [currentTrack?.artist, currentTrack?.title].filter(Boolean).join(' ')
+                      const found = await window.electronAPI.searchMusicWithFallback?.(q, 'youtube', 3)
+                      const cand = Array.isArray(found) ? found.find(x=> String(x?.id||'').length===11) : null
+                      if (cand) vid = String(cand.id).slice(0,11)
+                    }
+                    if (!vid) { alert('No YouTube video found for this track'); return }
                     const res = await window.electronAPI.getYouTubeVideoStream?.(vid)
                     const url = res?.streamUrl
                     if (!url) { alert('No video stream available'); return }
