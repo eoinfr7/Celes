@@ -75,6 +75,8 @@ export default function App() {
   const [gaplessOn, setGaplessOn] = useState(true)
   const [normalizeOn, setNormalizeOn] = useState(true)
   const [targetLufs, setTargetLufs] = useState(-14)
+  // UI + lyrics/download state (declare early so effects can reference)
+  
 
   // WebAudio EQ
   const audioCtxRef = useRef(null)
@@ -306,7 +308,7 @@ export default function App() {
     await crossfadeTo(src)
     rebuildAudioGraph()
     await applyNormalizationForTrack(track)
-    setCurrentTrack(track)
+      setCurrentTrack(track)
     prefetchForQueue()
   }
 
@@ -832,15 +834,15 @@ export default function App() {
             {view === 'search' && (
               <>
                 {!results.length && <div className="text-sm text-neutral-400">Type anything – e.g. “calming piano at night”, “vocal jazz 50s”, “beethoven sonata 14”.</div>}
-                <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
-                  {results.map((t) => (
-                    <div key={t.id} className="bg-neutral-900 border border-neutral-800 rounded p-3 flex flex-col gap-2">
-                      <img alt={t.title} src={t.thumbnail || 'https://via.placeholder.com/300x200/4a9eff/ffffff?text=♫'} className="w-full h-36 object-cover rounded" />
-                      <div className="text-sm font-medium line-clamp-2">{t.title}</div>
-                      <div className="text-xs text-neutral-400">{t.artist} • {t.platform}</div>
-                      <div className="flex gap-2">
-                        <Button className="mt-1 flex-1" onClick={() => doPlay(t)}>Play</Button>
-                        <Button className="mt-1" variant="ghost" onClick={() => addToQueue(t)}>+ Queue</Button>
+              <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
+              {results.map((t) => (
+                <div key={t.id} className="bg-neutral-900 border border-neutral-800 rounded p-3 flex flex-col gap-2">
+                  <img alt={t.title} src={t.thumbnail || 'https://via.placeholder.com/300x200/4a9eff/ffffff?text=♫'} className="w-full h-36 object-cover rounded" />
+                  <div className="text-sm font-medium line-clamp-2">{t.title}</div>
+                  <div className="text-xs text-neutral-400">{t.artist} • {t.platform}</div>
+                  <div className="flex gap-2">
+                    <Button className="mt-1 flex-1" onClick={() => doPlay(t)}>Play</Button>
+                      <Button className="mt-1" variant="ghost" onClick={() => addToQueue(t)}>+ Queue</Button>
                         <Button className="mt-1" variant="ghost" onClick={async ()=>{
                           const url = prompt('Import playlist from URL (Spotify or Apple Music):')
                           if (!url) return
@@ -916,7 +918,7 @@ export default function App() {
                     ))}
                   </div>
                 </div>
-              </div>
+            </div>
             )}
             {view === 'downloads' && (
               <DownloadsView />
@@ -978,7 +980,7 @@ export default function App() {
                         <div className="text-xs font-medium truncate">{p.name} <span className="text-neutral-500">({p.songs?.length || 0})</span></div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Button variant="ghost" onClick={() => setActivePlaylistId(p.id)}>Open</Button>
+                      <Button variant="ghost" onClick={() => setActivePlaylistId(p.id)}>Open</Button>
                         <Button variant="ghost" onClick={async () => { queuePlaylistDownload(p, false) }}>Download</Button>
                         <Button variant="ghost" onClick={async () => { queuePlaylistDownload(p, true) }}>Download Missing</Button>
                         {p.type !== 'system' && (
