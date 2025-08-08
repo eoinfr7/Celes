@@ -7,6 +7,11 @@
   --primary-foreground: 210 40% 98%;
   --background: 0 0% 4%;
   --foreground: 0 0% 100%;
+  /* Derived tokens with safe defaults; JS computes better values at runtime */
+  --surface: 0 0% 8%;
+  --surface-muted: 0 0% 12%;
+  --border: 0 0% 18%;
+  --muted-foreground: 0 0% 70%;
 }
 
 body{ margin:0; }

@@ -2,25 +2,30 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Heart, Plus, ListPlus } from 'lucide-react'
 
 const THEMES = [
+  // Keep black/dark backgrounds here
   { name: 'Midnight', vars: { '--primary': '221.2 83.2% 53.3%', '--background': '0 0% 4%', '--foreground': '0 0% 100%' } },
-  { name: 'Nord', vars: { '--primary': '210 34% 63%', '--background': '220 16% 16%', '--foreground': '220 14% 96%' } },
-  { name: 'Dracula', vars: { '--primary': '265 89% 78%', '--background': '231 15% 18%', '--foreground': '60 30% 96%' } },
-  { name: 'Solarized', vars: { '--primary': '186 72% 42%', '--background': '195 22% 17%', '--foreground': '44 55% 80%' } },
-  { name: 'Neon', vars: { '--primary': '160 100% 45%', '--background': '240 10% 6%', '--foreground': '0 0% 100%' } },
-  { name: 'Tumblr', vars: { '--primary': '210 50% 50%', '--background': '220 25% 12%', '--foreground': '210 40% 95%' } },
+  { name: 'Lilac', vars: { '--primary': '265 89% 78%', '--background': '231 15% 18%', '--foreground': '60 30% 96%' } },
+  // Light/tinted backgrounds for most themes
+  { name: 'Nord', vars: { '--primary': '210 34% 63%', '--background': '220 16% 94%', '--foreground': '220 15% 10%' } },
+  { name: 'Solarized', vars: { '--primary': '186 72% 42%', '--background': '45 52% 94%', '--foreground': '25 40% 15%' } },
+  { name: 'Neon', vars: { '--primary': '160 100% 45%', '--background': '240 10% 96%', '--foreground': '0 0% 12%' } },
+  { name: 'Tumblr', vars: { '--primary': '210 50% 50%', '--background': '210 30% 94%', '--foreground': '210 30% 12%' } },
+  { name: 'Light Green', vars: { '--primary': '142 70% 40%', '--background': '0 0% 98%', '--foreground': '0 0% 10%' } },
+  { name: 'Coral Blue', vars: { '--primary': '14 90% 60%', '--background': '205 40% 94%', '--foreground': '210 30% 10%' } },
+  { name: 'Silver', vars: { '--primary': '0 0% 60%', '--background': '0 0% 96%', '--foreground': '0 0% 12%' } },
 ]
 
 function Button({ className = '', variant = 'primary', ...props }) {
   const base = 'inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 h-9 px-4 py-2'
   const styles = variant === 'ghost'
-    ? 'bg-transparent hover:bg-neutral-800 border border-neutral-800 text-neutral-200'
+    ? 'bg-transparent hover:bg-surface-muted border border-border text-foreground/90'
     : 'bg-primary text-primary-foreground hover:bg-primary/90'
   return <button className={`${base} ${styles} ${className}`} {...props} />
 }
 
 function Sidebar({ onSelect }) {
   return (
-    <aside className="w-60 border-r border-neutral-800 h-screen sticky top-0 hidden md:flex flex-col">
+    <aside className="w-60 border-r border-border h-screen sticky top-0 hidden md:flex flex-col bg-surface">
       <div className="px-4 py-3 text-lg font-semibold">Celes</div>
       <nav className="px-2 py-2 space-y-1">
         {[
@@ -32,7 +37,7 @@ function Sidebar({ onSelect }) {
           <Button key={key} variant="ghost" className="w-full justify-start" onClick={() => onSelect(key)}>{label}</Button>
         ))}
       </nav>
-      <div className="mt-auto p-3 text-xs text-neutral-500">Open source alternative to Spotify</div>
+      <div className="mt-auto p-3 text-xs text-muted-foreground">Open source alternative to Spotify</div>
     </aside>
   )
 }
@@ -623,14 +628,14 @@ export default function App() {
   }, [])
 
   const SectionCard = ({ title, items }) => (
-    <div className="bg-neutral-900 border border-neutral-800 rounded p-3">
+    <div className="bg-surface border border-border rounded p-3">
       <div className="text-sm font-semibold mb-2">{title}</div>
       <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}>
         {(items || []).map((t) => (
-          <div key={t.id} className="bg-neutral-900/60 border border-neutral-800 rounded p-3 flex flex-col gap-2">
+          <div key={t.id} className="bg-surface-muted border border-border rounded p-3 flex flex-col gap-2">
             <img alt={t.title} src={t.thumbnail || 'https://via.placeholder.com/300x200/4a9eff/ffffff?text=♫'} className="w-full h-36 object-cover rounded" />
             <div className="text-sm font-medium line-clamp-2">{t.title}</div>
-            <div className="text-xs text-neutral-400"><button className="underline" onClick={()=>loadArtist(t.artist)}>{t.artist}</button> • {t.platform}</div>
+            <div className="text-xs text-muted-foreground"><button className="underline" onClick={()=>loadArtist(t.artist)}>{t.artist}</button> • {t.platform}</div>
             <div className="flex items-center justify-between mt-1">
               <Button className="flex-1" onClick={() => doPlay(t)}>Play</Button>
               <span className="flex items-center gap-2 ml-2">
@@ -658,9 +663,36 @@ export default function App() {
 
   const [themeOpen, setThemeOpen] = useState(false)
 
+  function clamp01(n){ return Math.max(0, Math.min(1, n)) }
+  function parseHslToObj(hsl){
+    try{
+      const [h,s,l] = String(hsl).split(/\s+/)
+      return { h: Number(h), s: Number(s.replace('%',''))/100, l: Number(l.replace('%',''))/100 }
+    }catch{ return null }
+  }
+  function hslStr(o){ return `${o.h} ${Math.round(o.s*100)}% ${Math.round(o.l*100)}%` }
+  function deriveTokens(bgStr, fgStr){
+    const bg = parseHslToObj(bgStr) || {h:0,s:0,l:0.04}
+    const fg = parseHslToObj(fgStr) || {h:0,s:0,l:1}
+    // simple surfaces based on background lightness; tuned for both light/dark
+    const isDark = bg.l < 0.5
+    const surface = { ...bg, l: clamp01(isDark? bg.l + 0.03 : bg.l - 0.03) }
+    const surfaceMuted = { ...bg, l: clamp01(isDark? bg.l + 0.06 : bg.l - 0.06) }
+    const border = { ...bg, l: clamp01(isDark? bg.l + 0.12 : bg.l - 0.12) }
+    const mutedFg = { ...fg, l: clamp01(isDark? 0.65 : 0.35), s: clamp01(fg.s*0.6) }
+    return {
+      '--surface': hslStr(surface),
+      '--surface-muted': hslStr(surfaceMuted),
+      '--border': hslStr(border),
+      '--muted-foreground': hslStr(mutedFg),
+    }
+  }
   function applyThemeVars(vars) {
     const root = document.documentElement
-    Object.entries(vars).forEach(([k,v]) => root.style.setProperty(k, v))
+    const bg = vars['--background']
+    const fg = vars['--foreground']
+    const derived = deriveTokens(bg, fg)
+    Object.entries({ ...vars, ...derived }).forEach(([k,v]) => root.style.setProperty(k, v))
   }
 
   useEffect(() => {
@@ -681,6 +713,7 @@ export default function App() {
     const [primary, setPrimary] = useState(getComputedStyle(document.documentElement).getPropertyValue('--primary'))
     const [bg, setBg] = useState(getComputedStyle(document.documentElement).getPropertyValue('--background') || '0 0% 4%')
     const [fg, setFg] = useState(getComputedStyle(document.documentElement).getPropertyValue('--foreground') || '0 0% 100%')
+    const [keepOpen, setKeepOpen] = useState(() => { try { return localStorage.getItem('celes.theme.keepOpen')==='true' } catch { return false } })
     const [preset, setPreset] = useState('')
 
     const onPreset = (val) => {
@@ -697,37 +730,41 @@ export default function App() {
       const vars = { '--primary': primary.trim(), '--background': bg.trim(), '--foreground': fg.trim() }
       applyThemeVars(vars)
       try { localStorage.setItem('celes.theme', JSON.stringify(vars)) } catch {}
-      setThemeOpen(false)
+      // Keep panel open if user desires
+      if (!keepOpen) setThemeOpen(false)
     }
 
     return (
-      <div className="fixed right-4 top-16 z-50 bg-neutral-900 border border-neutral-800 rounded p-3 w-80 shadow-xl">
-        <div className="text-sm font-semibold mb-2">Theme</div>
+      <div className="fixed right-4 top-16 z-50 bg-surface border border-border rounded p-3 w-80 shadow-xl">
+        <div className="text-sm font-semibold mb-2 flex items-center justify-between">
+          <span>Theme</span>
+          <label className="text-[11px] text-muted-foreground flex items-center gap-1"><input type="checkbox" checked={keepOpen} onChange={(e)=>{ const v=e.target.checked; setKeepOpen(v); try{ localStorage.setItem('celes.theme.keepOpen', String(v)) }catch{} }} /> Keep open</label>
+        </div>
         <div className="space-y-2 text-xs">
           <div>
             <div className="mb-1">Preset</div>
-            <select className="w-full bg-neutral-950 border border-neutral-800 rounded px-2 py-1" value={preset} onChange={(e)=>onPreset(e.target.value)}>
+            <select className="w-full bg-surface-muted border border-border rounded px-2 py-1" value={preset} onChange={(e)=>onPreset(e.target.value)}>
               <option value="">Custom…</option>
               {THEMES.map(t => <option key={t.name} value={t.name}>{t.name}</option>)}
             </select>
           </div>
           <div>
             <div className="mb-1">Primary (H S L)</div>
-            <input className="w-full bg-neutral-950 border border-neutral-800 rounded px-2 py-1" value={primary} onChange={(e)=>setPrimary(e.target.value)} />
+            <input className="w-full bg-surface-muted border border-border rounded px-2 py-1" value={primary} onChange={(e)=>setPrimary(e.target.value)} />
           </div>
           <div>
             <div className="mb-1">Background (H S L)</div>
-            <input className="w-full bg-neutral-950 border border-neutral-800 rounded px-2 py-1" value={bg} onChange={(e)=>setBg(e.target.value)} />
+            <input className="w-full bg-surface-muted border border-border rounded px-2 py-1" value={bg} onChange={(e)=>setBg(e.target.value)} />
           </div>
           <div>
             <div className="mb-1">Foreground (H S L)</div>
-            <input className="w-full bg-neutral-950 border border-neutral-800 rounded px-2 py-1" value={fg} onChange={(e)=>setFg(e.target.value)} />
+            <input className="w-full bg-surface-muted border border-border rounded px-2 py-1" value={fg} onChange={(e)=>setFg(e.target.value)} />
           </div>
           <div className="flex gap-2 pt-1">
             <Button onClick={save}>Save</Button>
             <Button variant="ghost" onClick={()=>setThemeOpen(false)}>Close</Button>
           </div>
-          <div className="pt-2 text-neutral-400">Tip: presets change HSL variables globally.</div>
+          <div className="pt-2 text-muted-foreground">Tip: presets change HSL variables globally.</div>
         </div>
       </div>
     )
@@ -745,13 +782,13 @@ export default function App() {
     const filtered = commands.filter(c=>c.name.toLowerCase().includes(input.toLowerCase()))
     return (
       <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center pt-32" onClick={()=>setPaletteOpen(false)}>
-        <div className="w-[560px] bg-neutral-900 border border-neutral-800 rounded shadow-xl" onClick={(e)=>e.stopPropagation()}>
-          <input autoFocus className="w-full bg-neutral-950 border-b border-neutral-800 px-3 py-2 text-sm" placeholder="Type a command…" value={input} onChange={(e)=>setInput(e.target.value)} onKeyDown={(e)=>{ if(e.key==='Escape') setPaletteOpen(false)}} />
+        <div className="w-[560px] bg-surface border border-border rounded shadow-xl" onClick={(e)=>e.stopPropagation()}>
+          <input autoFocus className="w-full bg-surface-muted border-b border-border px-3 py-2 text-sm" placeholder="Type a command…" value={input} onChange={(e)=>setInput(e.target.value)} onKeyDown={(e)=>{ if(e.key==='Escape') setPaletteOpen(false)}} />
           <div className="max-h-80 overflow-auto">
             {filtered.map((c,i)=>(
-              <div key={i} className="px-3 py-2 text-sm hover:bg-neutral-800 cursor-pointer" onClick={()=>{ c.run(); setPaletteOpen(false) }}>{c.name}</div>
+              <div key={i} className="px-3 py-2 text-sm hover:bg-surface-muted cursor-pointer" onClick={()=>{ c.run(); setPaletteOpen(false) }}>{c.name}</div>
             ))}
-            {filtered.length===0 && <div className="px-3 py-3 text-xs text-neutral-500">No commands</div>}
+            {filtered.length===0 && <div className="px-3 py-3 text-xs text-muted-foreground">No commands</div>}
           </div>
         </div>
       </div>
@@ -767,10 +804,10 @@ export default function App() {
     const fmt = (n)=>{ if(!Number.isFinite(n)) return '—'; const units=['B','KB','MB','GB','TB']; let i=0; let v=n; while(v>=1024 && i<units.length-1){ v/=1024; i++ } return `${v.toFixed(1)} ${units[i]}` }
     useEffect(()=>{ const used = (items||[]).reduce((s,x)=> s + (x.bytes||0), 0); setQuota(q=>({ ...q, used })) }, [items])
     return (
-      <div className="bg-neutral-900 border border-neutral-800 rounded p-3">
+      <div className="bg-surface border border-border rounded p-3">
         <div className="flex items-center justify-between mb-2">
           <div className="text-sm font-semibold">Downloads</div>
-          <div className="text-[11px] text-neutral-400">{fmt(quota.used)} / {fmt(quota.limit)}</div>
+          <div className="text-[11px] text-muted-foreground">{fmt(quota.used)} / {fmt(quota.limit)}</div>
         </div>
         <div className="mb-3 flex gap-2">
           <Button onClick={refresh}>Refresh</Button>
@@ -792,12 +829,12 @@ export default function App() {
           }}>Download Full Library</Button>
         </div>
         <div className="space-y-2">
-          {loading && <div className="text-xs text-neutral-400">Loading…</div>}
-          {!loading && items.length===0 && <div className="text-xs text-neutral-500">No downloads yet</div>}
+          {loading && <div className="text-xs text-muted-foreground">Loading…</div>}
+          {!loading && items.length===0 && <div className="text-xs text-muted-foreground">No downloads yet</div>}
           {items.map(d => (
-            <div key={d.id} className="text-xs flex items-center gap-2 border border-neutral-800 rounded p-2">
+            <div key={d.id} className="text-xs flex items-center gap-2 border border-border rounded p-2">
               <div className="flex-1 truncate">{d.title || 'Unknown'} — {d.artist || ''}</div>
-              <div className="text-neutral-400">{fmt(d.bytes)}</div>
+              <div className="text-muted-foreground">{fmt(d.bytes)}</div>
               <Button variant="ghost" onClick={async()=>{ await window.electronAPI.deleteDownload?.(d.id, true); refresh() }}>Delete</Button>
             </div>
           ))}
@@ -810,20 +847,20 @@ export default function App() {
 
   function SettingsPanel(){
     return (
-      <div className="fixed right-4 top-16 z-50 bg-neutral-900 border border-neutral-800 rounded p-3 w-96 shadow-xl">
+      <div className="fixed right-4 top-16 z-50 bg-surface border border-border rounded p-3 w-96 shadow-xl">
         <div className="text-sm font-semibold mb-2">Settings</div>
         <div className="space-y-3 text-xs">
           <div className="flex items-center justify-between"><div>Radio (auto similar)</div><input type="checkbox" checked={radioOn} onChange={(e)=>setRadioOn(e.target.checked)} /></div>
           <div className="flex items-center justify-between"><div>Crossfade</div><input type="checkbox" checked={crossfadeOn} onChange={(e)=>setCrossfadeOn(e.target.checked)} /></div>
           <div>
             <div className="mb-1">Crossfade Duration (ms)</div>
-            <input type="number" className="w-full bg-neutral-950 border border-neutral-800 rounded px-2 py-1" value={crossfadeMs} onChange={(e)=>setCrossfadeMs(Number(e.target.value)||0)} />
+          <input type="number" className="w-full bg-surface-muted border border-border rounded px-2 py-1" value={crossfadeMs} onChange={(e)=>setCrossfadeMs(Number(e.target.value)||0)} />
           </div>
           <div className="flex items-center justify-between"><div>Gapless (preload next)</div><input type="checkbox" checked={gaplessOn} onChange={(e)=>setGaplessOn(e.target.checked)} /></div>
           <div className="flex items-center justify-between"><div>Normalize loudness</div><input type="checkbox" checked={normalizeOn} onChange={(e)=>setNormalizeOn(e.target.checked)} /></div>
           <div>
             <div className="mb-1">Target LUFS</div>
-            <input type="number" step={1} min={-30} max={-8} className="w-full bg-neutral-950 border border-neutral-800 rounded px-2 py-1" value={targetLufs} onChange={(e)=>setTargetLufs(Number(e.target.value)||-14)} />
+            <input type="number" step={1} min={-30} max={-8} className="w-full bg-surface-muted border border-border rounded px-2 py-1" value={targetLufs} onChange={(e)=>setTargetLufs(Number(e.target.value)||-14)} />
           </div>
           <div className="flex items-center justify-between"><div>Equalizer</div><input type="checkbox" checked={eqOn} onChange={(e)=>{ setEqOn(e.target.checked); if(e.target.checked) ensureAudioGraph(); }} /></div>
           <div className="flex items-center justify-between"><div>Lyrics</div><input type="checkbox" checked={lyricsEnabled} onChange={(e)=>{ const v=e.target.checked; setLyricsEnabled(v); try{ localStorage.setItem('celes.lyricsEnabled', String(v)) }catch{} }} /></div>
@@ -831,7 +868,7 @@ export default function App() {
           <div className="flex items-center justify-between"><div>Show mini lyric</div><input type="checkbox" checked={showMiniLyric} onChange={(e)=>{ const v=e.target.checked; setShowMiniLyric(v); try{ localStorage.setItem('celes.showMiniLyric', String(v)) }catch{} }} /></div>
           <div className="flex gap-2 items-center">
             <div>Preset:</div>
-            <select className="bg-neutral-950 border border-neutral-800 rounded px-2 py-1" onChange={(e)=>setEqPreset(e.target.value)}>
+            <select className="bg-surface-muted border border-border rounded px-2 py-1" onChange={(e)=>setEqPreset(e.target.value)}>
               {Object.keys(EQ_PRESETS).map(p=> <option key={p} value={p}>{p}</option>)}
             </select>
           </div>
@@ -843,13 +880,13 @@ export default function App() {
               </div>
             ))}
           </div>
-          <div className="h-px bg-neutral-800 my-2" />
+          <div className="h-px bg-border my-2" />
           <div className="text-sm font-semibold">Downloads</div>
           <div className="flex items-center justify-between"><div>Auto-download liked songs</div><input type="checkbox" checked={autoDownloadLiked} onChange={async (e)=>{ const v=e.target.checked; setAutoDownloadLiked(v); await persistSettings({ ...(await window.electronAPI.getSettings?.()||{}), autoDownloadLiked: v, downloadDir }) }} /></div>
           <div>
             <div className="mb-1">Download folder</div>
             <div className="flex gap-2">
-              <input className="flex-1 bg-neutral-950 border border-neutral-800 rounded px-2 py-1" value={downloadDir} onChange={(e)=>setDownloadDir(e.target.value)} />
+              <input className="flex-1 bg-surface-muted border border-border rounded px-2 py-1" value={downloadDir} onChange={(e)=>setDownloadDir(e.target.value)} />
               <Button variant="ghost" onClick={async ()=>{ const dir = prompt('Set download folder', downloadDir || '/Users/'+(navigator.userAgent.includes('Mac')?'eoinfr':'')+'/Music/Celes'); if(dir){ setDownloadDir(dir); await persistSettings({ ...(await window.electronAPI.getSettings?.()||{}), autoDownloadLiked, downloadDir: dir }) } }}>Choose</Button>
             </div>
           </div>
@@ -909,11 +946,11 @@ export default function App() {
   }, [])
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100 flex">
+    <div className="min-h-screen bg-[hsl(var(--background))] text-[hsl(var(--foreground))] flex">
       <Sidebar onSelect={setView} />
       <div className="flex-1 flex flex-col">
-        <header className="h-14 border-b border-neutral-800 flex items-center px-4 gap-3">
-          <div className="hidden md:flex items-center gap-2 px-2 py-1 rounded bg-neutral-900 border border-neutral-800 flex-1 max-w-3xl">
+        <header className="h-14 border-b border-border flex items-center px-4 gap-3 bg-surface">
+          <div className="hidden md:flex items-center gap-2 px-2 py-1 rounded bg-surface border border-border flex-1 max-w-3xl">
             <input className="bg-transparent outline-none text-sm w-full" placeholder="Ask for any song, artist, mood…" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') doSearch() }} />
             <Button onClick={doSearch} disabled={loading}>{loading ? 'Searching…' : 'Search'}</Button>
           </div>
@@ -938,13 +975,13 @@ export default function App() {
             )}
             {view === 'search' && (
               <>
-                {!results.length && <div className="text-sm text-neutral-400">Type anything – e.g. “calming piano at night”, “vocal jazz 50s”, “beethoven sonata 14”.</div>}
+                {!results.length && <div className="text-sm text-muted-foreground">Type anything – e.g. “calming piano at night”, “vocal jazz 50s”, “beethoven sonata 14”.</div>}
               <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
               {results.map((t) => (
-                <div key={t.id} className="bg-neutral-900 border border-neutral-800 rounded p-3 flex flex-col gap-2">
+                <div key={t.id} className="bg-surface border border-border rounded p-3 flex flex-col gap-2">
                   <img alt={t.title} src={t.thumbnail || 'https://via.placeholder.com/300x200/4a9eff/ffffff?text=♫'} className="w-full h-36 object-cover rounded" />
                   <div className="text-sm font-medium line-clamp-2">{t.title}</div>
-                      <div className="text-xs text-neutral-400 flex items-center justify-between">
+                      <div className="text-xs text-muted-foreground flex items-center justify-between">
                         <span><button className="underline" onClick={()=>loadArtist(t.artist)}>{t.artist}</button> • {t.platform}</span>
                         <span className="flex items-center gap-2">
                           <button className="p-1 hover:text-primary" title="Add to queue" onClick={() => addToQueue(t)}><ListPlus size={16}/></button>
@@ -991,32 +1028,32 @@ export default function App() {
             )}
             {view === 'artist' && artistView && (
               <div className="space-y-4">
-                <div className="h-40 rounded bg-neutral-900 border border-neutral-800 overflow-hidden flex items-end p-4" style={{backgroundImage:`url(${artistView.data?.headerImage||''})`, backgroundSize:'cover', backgroundPosition:'center'}}>
+                <div className="h-40 rounded bg-surface border border-border overflow-hidden flex items-end p-4" style={{backgroundImage:`url(${artistView.data?.headerImage||''})`, backgroundSize:'cover', backgroundPosition:'center'}}>
                   <div className="text-3xl font-extrabold drop-shadow-md">{artistView.name}</div>
                 </div>
                 <div className="flex items-center gap-3">
                   <Button onClick={()=>{ const top=artistView.data?.topTracks?.[0]; if(top) doPlay(top)}}>Play</Button>
                   <Button variant="ghost" onClick={async ()=>{ await window.electronAPI.followArtistStreaming?.(artistView.name); alert('Following'); }}>Follow</Button>
                   {artistView.data?.followers && (
-                    <div className="text-xs text-neutral-400">{artistView.data.followers.toLocaleString()} followers <span className="text-neutral-500">(YT {artistView.data.followersBreakdown?.youtube?.toLocaleString?.()||'—'}, SC {artistView.data.followersBreakdown?.soundcloud?.toLocaleString?.()||'—'})</span></div>
+                    <div className="text-xs text-muted-foreground">{artistView.data.followers.toLocaleString()} followers <span className="text-muted-foreground/80">(YT {artistView.data.followersBreakdown?.youtube?.toLocaleString?.()||'—'}, SC {artistView.data.followersBreakdown?.soundcloud?.toLocaleString?.()||'—'})</span></div>
                   )}
                 </div>
                 {artistView.data?.about?.extract && (
-                  <div className="bg-neutral-900 border border-neutral-800 rounded p-3">
+                  <div className="bg-surface border border-border rounded p-3">
                     <div className="text-sm font-semibold mb-1">About (auto)</div>
-                    <div className="text-xs text-neutral-300 leading-relaxed">{artistView.data.about.extract}</div>
-                    <div className="text-[11px] text-neutral-500 mt-1">Source: {artistView.data.about.source}</div>
+                    <div className="text-xs text-foreground/80 leading-relaxed">{artistView.data.about.extract}</div>
+                    <div className="text-[11px] text-muted-foreground mt-1">Source: {artistView.data.about.source}</div>
                     <div className="mt-2">
                       <Button variant="ghost" onClick={async ()=>{ const data = await window.electronAPI.getArtistOverview?.(artistView.name, { top: 10, similar: 12 }, { force:true }); setArtistView({ name: artistView.name, data }); }}>Refresh</Button>
                     </div>
                   </div>
                 )}
                 <SectionCard title="Popular" items={artistView.data?.topTracks||[]} />
-                <div className="bg-neutral-900 border border-neutral-800 rounded p-3">
+                <div className="bg-surface border border-border rounded p-3">
                   <div className="text-sm font-semibold mb-2">Fans also like</div>
                   <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}>
                     {(artistView.data?.similarArtists||[]).map((a,i)=> (
-                      <div key={`${a.name}_${i}`} className="bg-neutral-900/60 border border-neutral-800 rounded p-3 flex flex-col gap-2">
+                      <div key={`${a.name}_${i}`} className="bg-surface-muted border border-border rounded p-3 flex flex-col gap-2">
                         <img alt={a.name} src={a.thumbnail || 'https://via.placeholder.com/300x200/4a9eff/ffffff?text=★'} className="w-full h-36 object-cover rounded" />
                         <div className="text-sm font-medium line-clamp-2">{a.name}</div>
                   <div className="flex gap-2">
@@ -1035,10 +1072,10 @@ export default function App() {
           </section>
 
           <aside className="hidden md:flex flex-col gap-3">
-            <div className="bg-neutral-900 border border-neutral-800 rounded p-3">
+            <div className="bg-surface border border-border rounded p-3">
               <div className="text-sm font-semibold mb-2">Queue</div>
               <div className="space-y-2 max-h-[50vh] overflow-auto pr-1">
-                {queue.length === 0 && <div className="text-xs text-neutral-500">Queue is empty</div>}
+                {queue.length === 0 && <div className="text-xs text-muted-foreground">Queue is empty</div>}
                 {queue.map((q, i) => (
                   <div key={`${q.id}_${i}`} className="text-xs flex items-center gap-2">
                     <img src={q.thumbnail || 'https://via.placeholder.com/32'} className="w-8 h-8 rounded object-cover"/>
@@ -1052,12 +1089,12 @@ export default function App() {
           </aside>
 
           <aside className="hidden lg:flex flex-col gap-3">
-            <div className="bg-neutral-900 border border-neutral-800 rounded p-3">
+            <div className="bg-surface border border-border rounded p-3">
               <div className="text-sm font-semibold mb-2">Now playing</div>
               <audio id="audio-el" ref={audioRef} controls className="w-full" preload="auto" crossOrigin="anonymous" />
               <audio id="audio-next" ref={nextAudioRef} className="hidden" preload="metadata" crossOrigin="anonymous" />
             </div>
-            <div className="bg-neutral-900 border border-neutral-800 rounded p-3">
+            <div className="bg-surface border border-border rounded p-3">
               <div className="text-sm font-semibold mb-2">Playlists</div>
               <div className="flex gap-2 mb-2">
                 <Button onClick={() => {
@@ -1081,13 +1118,13 @@ export default function App() {
               </div>
               <div className="space-y-2">
                 {playlists.map(p => (
-                  <div key={p.id} className={`border rounded p-2 ${activePlaylistId===p.id?'border-primary':'border-neutral-800'}`}>
+                  <div key={p.id} className={`border rounded p-2 ${activePlaylistId===p.id?'border-primary':'border-border'}`}>
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2 min-w-0">
-                        <div className="w-8 h-8 rounded bg-neutral-800 overflow-hidden flex items-center justify-center">
-                          {playlistCovers[p.id] ? <img src={playlistCovers[p.id]} alt="cover" className="w-full h-full object-cover"/> : <span className="text-[10px] text-neutral-500">★</span>}
+                        <div className="w-8 h-8 rounded bg-surface-muted overflow-hidden flex items-center justify-center">
+                          {playlistCovers[p.id] ? <img src={playlistCovers[p.id]} alt="cover" className="w-full h-full object-cover"/> : <span className="text-[10px] text-muted-foreground">★</span>}
                         </div>
-                        <div className="text-xs font-medium truncate">{p.name} <span className="text-neutral-500">({p.songs?.length || 0})</span></div>
+                    <div className="text-xs font-medium truncate">{p.name} <span className="text-muted-foreground">({p.songs?.length || 0})</span></div>
                       </div>
                       <div className="flex items-center gap-2">
                       <Button variant="ghost" onClick={() => setActivePlaylistId(p.id)}>Open</Button>
@@ -1106,7 +1143,7 @@ export default function App() {
                     </div>
                     {activePlaylistId===p.id && (
                       <div className="mt-2 space-y-1 max-h-48 overflow-auto pr-1">
-                        {(p.songs?.length || 0) === 0 && <div className="text-xs text-neutral-500">No tracks yet</div>}
+                        {(p.songs?.length || 0) === 0 && <div className="text-xs text-muted-foreground">No tracks yet</div>}
                         {(p.songs || []).map((t, idx) => (
                           <div key={`${t.id}_${idx}`} className="text-xs flex items-center gap-2">
                             <img src={t.thumbnail_url || t.thumbnail || 'https://via.placeholder.com/28'} className="w-7 h-7 rounded object-cover"/>
@@ -1115,7 +1152,7 @@ export default function App() {
                           </div>
                         ))}
                         {playlistDl[p.id] && (
-                          <div className="text-[11px] text-neutral-400">Downloading: {playlistDl[p.id].done}/{playlistDl[p.id].total}{playlistDl[p.id].currentPercent!=null? ` • ${playlistDl[p.id].currentPercent}%`:''}</div>
+                          <div className="text-[11px] text-muted-foreground">Downloading: {playlistDl[p.id].done}/{playlistDl[p.id].total}{playlistDl[p.id].currentPercent!=null? ` • ${playlistDl[p.id].currentPercent}%`:''}</div>
                         )}
                       </div>
                     )}
@@ -1130,10 +1167,10 @@ export default function App() {
       {themeOpen && <ThemePanel />}
       {settingsOpen && <SettingsPanel />}
       {miniDockOn && (
-        <div className="fixed bottom-24 right-4 z-40 bg-neutral-900/95 border border-neutral-800 rounded shadow-xl p-3 w-[340px]">
+        <div className="fixed bottom-24 right-4 z-40 bg-surface/95 border border-border rounded shadow-xl p-3 w-[340px]">
           <div className="text-sm font-semibold mb-2 flex items-center justify-between">
             <span>Mini Dock</span>
-            <span className="text-[11px] text-neutral-400 flex items-center gap-2">
+            <span className="text-[11px] text-muted-foreground flex items-center gap-2">
               <label className="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={dockVisOn} onChange={(e)=>setDockVisOn(e.target.checked)} /> Vis</label>
               <label className="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={dockVideoOn} onChange={async (e)=>{
                 const on = e.target.checked
@@ -1171,21 +1208,21 @@ export default function App() {
             <img src={currentTrack?.thumbnail || 'https://via.placeholder.com/48'} className="w-12 h-12 rounded object-cover"/>
             <div className="flex-1 min-w-0">
               <div className="text-sm truncate">{currentTrack?.title || 'Nothing playing'}</div>
-              <div className="text-xs text-neutral-400 truncate">{currentTrack?.artist || ''}</div>
+              <div className="text-xs text-muted-foreground truncate">{currentTrack?.artist || ''}</div>
             </div>
             <div className="flex items-center gap-2">
-              <button className="p-2 rounded hover:bg-neutral-800" onClick={()=>nextFromQueue()}><SkipBack size={16}/></button>
+              <button className="p-2 rounded hover:bg-surface-muted" onClick={()=>nextFromQueue()}><SkipBack size={16}/></button>
               <button className="p-2 rounded bg-primary text-primary-foreground hover:bg-primary/90" onClick={togglePlayPause}>{isPlaying? <Pause size={16}/> : <Play size={16}/>}</button>
-              <button className="p-2 rounded hover:bg-neutral-800" onClick={()=>nextFromQueue()}><SkipForward size={16}/></button>
+              <button className="p-2 rounded hover:bg-surface-muted" onClick={()=>nextFromQueue()}><SkipForward size={16}/></button>
             </div>
           </div>
           {(dockVisOn || dockVideoOn) && (
-            <div className="mt-2 rounded overflow-hidden border border-neutral-800 bg-black/60" style={{height: 120}}>
+            <div className="mt-2 rounded overflow-hidden border border-border bg-black/60" style={{height: 120}}>
               {dockVideoOn ? (
                 dockVideoUrl && !dockVideoFailed ? (
                   <video ref={dockVideoRef} src={dockVideoUrl||''} className="w-full h-full object-contain bg-black" muted playsInline autoPlay crossOrigin="anonymous" onError={()=>setDockVideoFailed(true)} onCanPlay={()=>{ try { dockVideoRef.current?.play?.() } catch {} }} />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center text-xs text-neutral-400">Video unavailable</div>
+                  <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">Video unavailable</div>
                 )
               ) : (
                 <canvas id="dock-vis" className="w-full h-full" />
@@ -1194,41 +1231,41 @@ export default function App() {
           )}
           <div className="mt-2 flex items-center gap-2">
             <input type="range" min={0} max={1} step={0.01} value={volume} onChange={(e)=>setVolume(Number(e.target.value))} className="flex-1 accent-primary" />
-            <button className="text-xs text-neutral-400" onClick={()=>setMiniDockOn(false)}>Close</button>
+            <button className="text-xs text-muted-foreground" onClick={()=>setMiniDockOn(false)}>Close</button>
           </div>
         </div>
       )}
-      <div className="fixed bottom-0 left-0 right-0 border-t border-neutral-800 bg-neutral-950/90 backdrop-blur supports-[backdrop-filter]:bg-neutral-950/60">
+      <div className="fixed bottom-0 left-0 right-0 border-t border-border bg-background/90 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="mx-auto max-w-screen-2xl px-4 h-20 flex items-center gap-4">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-14 h-14 bg-neutral-800 rounded overflow-hidden flex items-center justify-center">
-              {currentTrack ? (<img alt={currentTrack.title} src={currentTrack.thumbnail || 'https://via.placeholder.com/56'} className="w-full h-full object-cover" />) : (<span className="text-xs text-neutral-500">♫</span>)}
+            <div className="w-14 h-14 bg-surface-muted rounded overflow-hidden flex items-center justify-center">
+              {currentTrack ? (<img alt={currentTrack.title} src={currentTrack.thumbnail || 'https://via.placeholder.com/56'} className="w-full h-full object-cover" />) : (<span className="text-xs text-muted-foreground">♫</span>)}
             </div>
             <div className="min-w-0">
               <div className="text-sm font-medium truncate max-w-[220px]">{currentTrack?.title || 'Nothing playing'}</div>
-              <div className="text-xs text-neutral-400 truncate max-w-[220px]">{currentTrack?.artist || ''}</div>
+              <div className="text-xs text-muted-foreground truncate max-w-[220px]">{currentTrack?.artist || ''}</div>
             </div>
           </div>
           <div className="flex-1 flex flex-col gap-1 items-center">
             <div className="flex items-center gap-4">
-              <button className="p-2 rounded hover:bg-neutral-800" onClick={() => nextFromQueue()} aria-label="Previous"><SkipBack size={18} /></button>
+              <button className="p-2 rounded hover:bg-surface-muted" onClick={() => nextFromQueue()} aria-label="Previous"><SkipBack size={18} /></button>
               <button className="p-3 rounded-full bg-primary text-primary-foreground hover:bg-primary/90" onClick={togglePlayPause} aria-label="Play/Pause">{isPlaying ? <Pause size={18}/> : <Play size={18}/>}</button>
-              <button className="p-2 rounded hover:bg-neutral-800" onClick={() => nextFromQueue()} aria-label="Next"><SkipForward size={18} /></button>
+              <button className="p-2 rounded hover:bg-surface-muted" onClick={() => nextFromQueue()} aria-label="Next"><SkipForward size={18} /></button>
             </div>
             <div className="flex items-center gap-3 w-full max-w-xl">
-              <span className="text-[11px] text-neutral-400 w-10 text-right">{fmtTime(progress)}</span>
+              <span className="text-[11px] text-muted-foreground w-10 text-right">{fmtTime(progress)}</span>
               <input type="range" min={0} max={Math.max(1, duration)} step="any" value={Math.min(progress, duration || 0)}
                 onMouseDown={()=>{ isSeekingRef.current = true; const el = getActiveEl(); if(el) try{ el.pause() }catch{} }}
                 onChange={(e) => { const t = Number(e.target.value); setProgress(t) }}
                 onMouseUp={(e)=>{ const t = Number(e.currentTarget.value); const el = getActiveEl(); if (el){ if (typeof el.fastSeek === 'function'){ try { el.fastSeek(t) } catch { el.currentTime = t } } else { el.currentTime = t } el.play().catch(()=>{}) } isSeekingRef.current = false }}
                 className="w-full accent-primary" />
-              <span className="text-[11px] text-neutral-400 w-10">{fmtTime(duration)}</span>
+              <span className="text-[11px] text-muted-foreground w-10">{fmtTime(duration)}</span>
             </div>
           </div>
           <div className="hidden md:flex items-center gap-2 w-48 justify-end">
-            <button className="p-2 rounded hover:bg-neutral-800" onClick={() => setVolume(v => v > 0 ? 0 : 0.8)} aria-label="Mute">{volume > 0 ? <Volume2 size={18}/> : <VolumeX size={18}/>} </button>
+            <button className="p-2 rounded hover:bg-surface-muted" onClick={() => setVolume(v => v > 0 ? 0 : 0.8)} aria-label="Mute">{volume > 0 ? <Volume2 size={18}/> : <VolumeX size={18}/>} </button>
             <input type="range" min={0} max={1} step={0.01} value={volume} onChange={(e) => setVolume(Number(e.target.value))} className="w-32 accent-primary" />
-            {showMiniLyric && miniLyric && <div className="text-[11px] text-neutral-400 truncate max-w-[220px]">{miniLyric}</div>}
+            {showMiniLyric && miniLyric && <div className="text-[11px] text-muted-foreground truncate max-w-[220px]">{miniLyric}</div>}
             <Button variant="ghost" onClick={async()=>{ if(!currentTrack) return; setLyricsOpen(v=>!v); if(!lyricsData){ setLyricsData({ loading:true }); const meta = { artist: currentTrack.artist, title: currentTrack.title, duration: currentTrack.duration }; const l = await window.electronAPI.getLyricsForTrack?.(meta); setLyricsData(l||{plainLyrics:'No lyrics found'}); } }}>Lyrics</Button>
             <Button variant="ghost" onClick={()=>setTheaterOn(true)}>Theater</Button>
           </div>
@@ -1236,21 +1273,21 @@ export default function App() {
       </div>
       {lyricsOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center" onClick={()=>setLyricsOpen(false)}>
-          <div className="w-[640px] max-h-[70vh] overflow-auto bg-neutral-900 border border-neutral-800 rounded p-4" onClick={(e)=>e.stopPropagation()}>
+          <div className="w-[640px] max-h-[70vh] overflow-auto bg-surface border border-border rounded p-4" onClick={(e)=>e.stopPropagation()}>
             <div className="text-sm font-semibold mb-2">Lyrics</div>
-            {!lyricsData && <div className="text-xs text-neutral-400">Loading…</div>}
+            {!lyricsData && <div className="text-xs text-muted-foreground">Loading…</div>}
             {lyricsData?.syncedLyrics ? (
               <div className="text-sm leading-7">
                 {(parsedLrc||[]).map((line,idx)=> (
-                  <div key={idx} id={`lrc-line-${idx}`} className={idx===activeLrcIdx? 'text-primary font-semibold' : 'text-neutral-300'}>
+                  <div key={idx} id={`lrc-line-${idx}`} className={idx===activeLrcIdx? 'text-primary font-semibold' : 'text-foreground/80'}>
                     {line.text}
                   </div>
                 ))}
               </div>
             ) : (
-              <pre className="whitespace-pre-wrap text-xs text-neutral-200">{lyricsData?.plainLyrics || 'No lyrics found'}</pre>
+              <pre className="whitespace-pre-wrap text-xs text-foreground/80">{lyricsData?.plainLyrics || 'No lyrics found'}</pre>
             )}
-            <div className="text-[11px] text-neutral-500 mt-2">Source: {lyricsData?.source || '—'}</div>
+            <div className="text-[11px] text-muted-foreground mt-2">Source: {lyricsData?.source || '—'}</div>
             <div className="mt-3 flex justify-end"><Button variant="ghost" onClick={()=>setLyricsOpen(false)}>Close</Button></div>
           </div>
         </div>
@@ -1291,7 +1328,7 @@ export default function App() {
             </div>
             {!videoOn && <img src={currentTrack?.thumbnail || 'https://via.placeholder.com/512'} className="w-[36vmin] h-[36vmin] rounded shadow-lg object-cover" alt="art" />}
             <div className="text-3xl font-bold text-white max-w-[80vw] text-center truncate">{currentTrack?.title||'Nothing playing'}</div>
-            <div className="text-lg text-neutral-300 truncate max-w-[70vw]">{currentTrack?.artist||''}</div>
+            <div className="text-lg text-foreground/80 truncate max-w-[70vw]">{currentTrack?.artist||''}</div>
             <div className="flex items-center gap-6">
               <button className="px-5 py-3 rounded bg-white/10 hover:bg-white/20 text-white" onClick={togglePlayPause}>{isPlaying? 'Pause':'Play'}</button>
               <button className="px-5 py-3 rounded bg-white/10 hover:bg-white/20 text-white" onClick={()=>nextFromQueue()}>Next</button>
