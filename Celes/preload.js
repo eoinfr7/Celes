@@ -125,6 +125,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   reportNowPlaying: (data) => ipcRenderer.send('report-now-playing', data),
   onMiniNowPlaying: (cb) => ipcRenderer.on('mini-now-playing', (_e, data)=> cb?.(data)),
   onRendererCommand: (cb) => ipcRenderer.on('renderer-command', (_e, payload)=> cb?.(payload)),
+  onHandlersReady: (cb) => ipcRenderer.on('handlers-ready', () => cb?.()),
   getSimilarTracks: (trackId, platform, limit) => ipcRenderer.invoke('get-similar-tracks', trackId, platform, limit),
   followArtistStreaming: (artistName) => ipcRenderer.invoke('follow-artist-streaming', artistName),
   unfollowArtistStreaming: (artistName) => ipcRenderer.invoke('unfollow-artist-streaming', artistName),

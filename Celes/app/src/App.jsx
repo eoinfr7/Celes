@@ -49,7 +49,7 @@ export default function App() {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
-  const [view, setView] = useState('home')
+  // view already defined earlier
   const platforms = useMemo(() => ['soundcloud', 'internetarchive'], [])
   const [platform] = useState('soundcloud')
   const [queue, setQueue] = useState([])
@@ -141,6 +141,8 @@ export default function App() {
   const normalizeGainRef = useRef(null)
   const analyserRef = useRef(null)
   const filtersRef = useRef([])
+  const crossfadeTimerRef = useRef(null)
+  const crossfadeGenRef = useRef(0)
   const [eqOn, setEqOn] = useState(false)
   const [eqGains, setEqGains] = useState([0,0,0,0,0,0,0,0,0,0])
   const EQ_BANDS = [60, 120, 250, 500, 1000, 2000, 4000, 8000, 12000, 16000]
@@ -255,6 +257,8 @@ export default function App() {
     const a = getActiveEl()
     const b = getInactiveEl()
     if (!a || !srcUrl){ return }
+    // cancel any previous fade
+    if (crossfadeTimerRef.current){ try { clearInterval(crossfadeTimerRef.current) } catch {} ; crossfadeTimerRef.current = null }
     // If crossfade disabled or we don't have a second element, play directly
     if (!crossfadeOn || a.paused || !b){
       a.src = srcUrl
@@ -265,11 +269,24 @@ export default function App() {
     b.volume = 0
     b.src = srcUrl
     try { await b.play() } catch {}
+    // Immediately switch the logical active side so UI (time/duration/seek) follows the audible track
+    setActiveSide(prev => prev === 'main' ? 'next' : 'main')
+    setIsPlaying(true)
+    const gen = ++crossfadeGenRef.current
+    // Force refresh of duration/progress for the new active element ASAP
+    try {
+      setTimeout(()=>{
+        if (gen !== crossfadeGenRef.current) return
+        const el = getActiveEl()
+        if (el){ setDuration(el.duration || 0); setProgress(el.currentTime || 0) }
+      }, 0)
+    } catch {}
     const useMs = Number.isFinite(fadeMs) ? Math.max(50, fadeMs) : crossfadeMs
     const steps = Math.max(6, Math.floor(useMs/40))
     const step = useMs/steps
     let i=0
     const timer = setInterval(()=>{
+      if (gen !== crossfadeGenRef.current){ clearInterval(timer); return }
       i++
       const t = i/steps
       a.volume = Math.max(0, 1-t)
@@ -279,10 +296,11 @@ export default function App() {
         try { a.pause() } catch {}
         try { a.src='' } catch {}
         a.volume=1; b.volume=1
-        setIsPlaying(true)
-        setActiveSide(prev => prev === 'main' ? 'next' : 'main')
+        // already switched sides above
+        crossfadeTimerRef.current = null
       }
     }, step)
+    crossfadeTimerRef.current = timer
   }
 
   async function prefetchForQueue(){
@@ -388,6 +406,8 @@ export default function App() {
     }
     if (!src) return
     ensureAudioGraph(); if (eqOn) applyEqGains(eqGains)
+    // Reset UI timers immediately to avoid showing 0:00 on the wrong element
+    try { setProgress(0); setDuration(0) } catch {}
     await crossfadeTo(src, options.fadeMs)
     rebuildAudioGraph()
     await applyNormalizationForTrack(track)
@@ -493,13 +513,14 @@ export default function App() {
   const isSwitchingRef = useRef(false)
   function nextFromQueue() {
     if (isSwitchingRef.current) return
+    const q = queue
+    if (!q || q.length === 0) { setIsPlaying(false); return }
     isSwitchingRef.current = true
-    setQueue((q) => {
-      if (q.length === 0) { setIsPlaying(false); isSwitchingRef.current = false; return q }
-      const [next, ...rest] = q
-      Promise.resolve().then(async ()=>{ try { await doPlay(next, { fadeMs: 250 }) } finally { isSwitchingRef.current = false } })
-      return rest
-    })
+    const [next, ...rest] = q
+    setQueue(rest)
+    // Preempt: bump generation to cancel any in-flight fades and start fresh
+    crossfadeGenRef.current++
+    Promise.resolve().then(async ()=>{ try { await doPlay(next, { fadeMs: 250 }) } finally { isSwitchingRef.current = false } })
   }
 
   function previousOrRestart() {
@@ -521,9 +542,8 @@ export default function App() {
   useEffect(() => { if (view === 'home') loadHome() }, [view])
   useEffect(() => {
     const onReady = () => { if (view === 'home') loadHome() }
-    try { window.electronAPI?.onRendererCommand?.(null) } catch {}
-    window.addEventListener('handlers-ready', onReady)
-    return () => window.removeEventListener('handlers-ready', onReady)
+    try { window.electronAPI?.onHandlersReady?.(onReady) } catch {}
+    return () => { /* ipc listener cleaned by Electron on reload */ }
   }, [view])
   useEffect(() => { reloadPlaylists() }, [])
   useEffect(() => { (async()=>{ try { const liked = await window.electronAPI.getLikedSongs?.(); if (Array.isArray(liked)) { const keys = liked.map(t=> `${t.platform||'youtube'}:${String(t.stream_id||t.id)}`); setLikedSet(new Set(keys)); try{ localStorage.setItem('celes.likedSet', JSON.stringify(keys)) }catch{} } } catch {} })() }, [])
@@ -578,7 +598,7 @@ export default function App() {
       audio.removeEventListener('play', onPlay)
       audio.removeEventListener('pause', onPause)
     }
-  }, [activeSide, volume])
+  }, [activeSide, volume, currentTrack])
 
   useEffect(() => { try { localStorage.setItem('celes.volume', String(volume)) } catch {} ; try { if (audioRef.current) audioRef.current.volume = volume } catch {}; try { if (nextAudioRef.current) nextAudioRef.current.volume = volume } catch {} }, [volume])
   useEffect(() => { window.electronAPI.streamingHealthCheck?.() }, [])
@@ -777,9 +797,16 @@ export default function App() {
   // Artist pages removed per request
 
   function ThemePanel() {
-    const [primary, setPrimary] = useState(getComputedStyle(document.documentElement).getPropertyValue('--primary'))
-    const [bg, setBg] = useState(getComputedStyle(document.documentElement).getPropertyValue('--background') || '0 0% 4%')
-    const [fg, setFg] = useState(getComputedStyle(document.documentElement).getPropertyValue('--foreground') || '0 0% 100%')
+    // Read current applied theme as the baseline for preview/revert
+    const cs = getComputedStyle(document.documentElement)
+    const initialPrimary = (cs.getPropertyValue('--primary') || '').trim()
+    const initialBg = (cs.getPropertyValue('--background') || '0 0% 4%').trim()
+    const initialFg = (cs.getPropertyValue('--foreground') || '0 0% 100%').trim()
+
+    const [primary, setPrimary] = useState(initialPrimary)
+    const [bg, setBg] = useState(initialBg)
+    const [fg, setFg] = useState(initialFg)
+    const baselineRef = useRef({ '--primary': initialPrimary, '--background': initialBg, '--foreground': initialFg })
     const [keepOpen, setKeepOpen] = useState(() => { try { return localStorage.getItem('celes.theme.keepOpen')==='true' } catch { return false } })
     const [preset, setPreset] = useState('')
 
@@ -797,9 +824,24 @@ export default function App() {
       const vars = { '--primary': primary.trim(), '--background': bg.trim(), '--foreground': fg.trim() }
       applyThemeVars(vars)
       try { localStorage.setItem('celes.theme', JSON.stringify(vars)) } catch {}
-      // Keep panel open if user desires
-      if (!keepOpen) setThemeOpen(false)
+      // Update baseline so future closes won't revert this saved theme
+      baselineRef.current = vars
+      // Always close after saving
+      setThemeOpen(false)
     }
+
+    // Live preview on field changes
+    useEffect(() => {
+      const vars = { '--primary': primary.trim(), '--background': bg.trim(), '--foreground': fg.trim() }
+      applyThemeVars(vars)
+    }, [primary, bg, fg])
+
+    // Revert unsaved changes on close/unmount
+    useEffect(() => {
+      return () => {
+        try { applyThemeVars(baselineRef.current) } catch {}
+      }
+    }, [])
 
   return (
       <div className="fixed right-4 top-16 z-50 bg-surface border border-border rounded p-3 w-80 shadow-xl">
@@ -1183,10 +1225,10 @@ export default function App() {
           </aside>
 
           <aside className="hidden lg:flex flex-col gap-3">
-            <div className="bg-surface border border-border rounded p-3">
-              <div className="text-sm font-semibold mb-2">Now playing</div>
-              <audio id="audio-el" ref={audioRef} controls className="w-full" preload="auto" crossOrigin="anonymous" />
-              <audio id="audio-next" ref={nextAudioRef} className="hidden" preload="metadata" crossOrigin="anonymous" />
+            {/* Hidden audio elements (kept in DOM for playback, no visible UI) */}
+            <div className="hidden">
+              <audio id="audio-el" ref={audioRef} preload="auto" crossOrigin="anonymous" />
+              <audio id="audio-next" ref={nextAudioRef} preload="auto" crossOrigin="anonymous" />
             </div>
             <div className="bg-surface border border-border rounded p-3">
               <div className="text-sm font-semibold mb-2">Playlists</div>

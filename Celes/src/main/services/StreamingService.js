@@ -26,7 +26,7 @@ class StreamingService extends BaseStreamingService {
     return null;
   }
 
-  async doJsonGet(url, timeoutMs = 8000) {
+  async doJsonGet(url, timeoutMs = 6000) {
     const https = require('https');
     return new Promise((resolve, reject) => {
       try {
@@ -142,7 +142,7 @@ class StreamingService extends BaseStreamingService {
     const instances = listInstances();
     const tasks = instances.map((base) => (async () => {
       const url = `${base}/search?q=${encodeURIComponent(query)}`;
-      const json = await this.doJsonGet(url, 8000);
+      const json = await this.doJsonGet(url, 5000);
       const res = parseItems(json);
       return { base, res };
     })());
@@ -152,8 +152,11 @@ class StreamingService extends BaseStreamingService {
       const results = uniq(first?.res || []).slice(0, limit);
       if (results.length >= Math.min(6, limit)) return results;
       // Try to combine with any other successful responses without waiting too long
-      const settled = await Promise.allSettled(tasks);
-      const merged = uniq(settled.filter(x=>x.status==='fulfilled').flatMap(x=>x.value.res || []));
+      const settled = await Promise.race([
+        Promise.allSettled(tasks),
+        new Promise(resolve=> setTimeout(()=> resolve([]), 1200))
+      ]);
+      const merged = Array.isArray(settled) ? uniq(settled.filter(x=>x.status==='fulfilled').flatMap(x=>x.value.res || [])) : results;
       return merged.slice(0, limit);
     } catch {
       return [];
@@ -868,8 +871,11 @@ class StreamingService extends BaseStreamingService {
     }
 
     const out = {};
-    // Build trending first
-    const trending = await tryQueries(sections.find(s=>s.key==='trending').queries);
+    // Build trending first (with soft timeout to avoid long blank states)
+    const trending = await Promise.race([
+      tryQueries(sections.find(s=>s.key==='trending').queries),
+      new Promise(resolve=> setTimeout(()=> resolve([]), 1500))
+    ]) || [];
     out.trending = this.filterExploreItems(trending).slice(0, limit);
     // Build new releases and fall back to trending if empty
     const newRel = await tryQueries(sections.find(s=>s.key==='newReleases').queries);
