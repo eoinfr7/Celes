@@ -453,6 +453,26 @@ class IPCHandlers {
       }
     });
 
+    // Offline downloads
+    ipcMain.handle('download-track', async (event, track, targetDir) => {
+      try {
+        const res = await this.streamingService.downloadTrackToFile(track, targetDir);
+        // If DB is available and track exists, record download
+        try {
+          if (this.database && track && track.stream_id) {
+            const song = this.database.db.prepare('SELECT id FROM songs WHERE stream_id = ? AND platform = ?').get(String(track.stream_id||track.id), track.platform||'youtube');
+            if (song && song.id) {
+              this.database.db.prepare('INSERT OR REPLACE INTO downloads (song_id, file_path, bytes, content_type) VALUES (?, ?, ?, ?)').run(song.id, res.path, res.bytes, res.contentType || null);
+            }
+          }
+        } catch {}
+        return res;
+      } catch (error) {
+        console.error('Error downloading track:', error);
+        return { error: error.message };
+      }
+    });
+
     ipcMain.handle('get-track-info', async (event, trackId, platform) => {
       try {
         return await this.streamingService.getTrackInfo(trackId, platform);

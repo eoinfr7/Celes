@@ -362,6 +362,17 @@ export default function App() {
             <div className="flex gap-2">
               <Button className="mt-1 flex-1" onClick={() => doPlay(t)}>Play</Button>
               <Button className="mt-1" variant="ghost" onClick={() => addToQueue(t)}>+ Queue</Button>
+              <Button className="mt-1" variant="ghost" onClick={async ()=>{
+                try {
+                  const dirHandle = await window.showDirectoryPicker?.().catch(()=>null)
+                  let targetDir = null
+                  if (dirHandle && dirHandle.name) { targetDir = dirHandle.name } // fallback; Electron can't use FileSystemHandle directly
+                  if (!targetDir) { targetDir = prompt('Save to folder (absolute path):', '/Users/'+(navigator.userAgent.includes('Mac')?'eoinfr':'')+'/Music/Celes') }
+                  if (!targetDir) return
+                  const res = await window.electronAPI.downloadTrack?.({ id:t.id, stream_id:String(t.id), platform:t.platform, title:t.title, artist:t.artist, streamUrl:t.streamUrl }, targetDir)
+                  if (res && !res.error) alert('Saved: '+res.path)
+                } catch {}
+              }}>Download</Button>
               <Button className="mt-1" variant="ghost" onClick={async () => {
                 let pid = activePlaylistId
                 if (!pid || !playlists.find(p=>p.id===pid)) {

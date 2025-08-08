@@ -109,6 +109,17 @@ class MusicDatabase {
         expires_at DATETIME
       );
 
+      CREATE TABLE IF NOT EXISTS downloads (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        song_id INTEGER,
+        file_path TEXT NOT NULL,
+        bytes INTEGER,
+        content_type TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(song_id),
+        FOREIGN KEY (song_id) REFERENCES songs (id) ON DELETE CASCADE
+      );
+
       CREATE INDEX IF NOT EXISTS idx_songs_artist ON songs(artist);
       CREATE INDEX IF NOT EXISTS idx_songs_album ON songs(album);
       CREATE INDEX IF NOT EXISTS idx_songs_type ON songs(type);
@@ -118,6 +129,7 @@ class MusicDatabase {
       CREATE INDEX IF NOT EXISTS idx_recently_played_date ON recently_played(played_at);
       CREATE INDEX IF NOT EXISTS idx_followed_artists_name ON followed_artists(artist_name);
       CREATE INDEX IF NOT EXISTS idx_streaming_cache_key ON streaming_cache(cache_key);
+      CREATE INDEX IF NOT EXISTS idx_downloads_song ON downloads(song_id);
     `;
 
     this.db.exec(createTablesSQL, (err) => {
@@ -201,6 +213,26 @@ class MusicDatabase {
         if (!hasCoverFmt) {
           console.log('Adding cover_image_format column to playlists table...');
           this.db.run('ALTER TABLE playlists ADD COLUMN cover_image_format TEXT');
+        }
+      });
+
+      // Downloads table migration safeguard
+      this.db.all("SELECT name FROM sqlite_master WHERE type='table' AND name='downloads'", (err, rows) => {
+        if (err) return;
+        if (!rows || rows.length === 0) {
+          try {
+            this.db.run(`CREATE TABLE IF NOT EXISTS downloads (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              song_id INTEGER,
+              file_path TEXT NOT NULL,
+              bytes INTEGER,
+              content_type TEXT,
+              created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+              UNIQUE(song_id),
+              FOREIGN KEY (song_id) REFERENCES songs (id) ON DELETE CASCADE
+            );`);
+            this.db.run('CREATE INDEX IF NOT EXISTS idx_downloads_song ON downloads(song_id);');
+          } catch {}
         }
       });
     } catch (error) {

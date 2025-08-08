@@ -227,6 +227,12 @@ class StreamingService extends BaseStreamingService {
     return null;
   }
 
+  // Loudness analysis placeholder (EBU R128 / ReplayGain style)
+  async analyzeLoudnessPlaceholder(streamUrl) {
+    // TODO: integrate real analysis (e.g., ffmpeg/ebur128)
+    return { integratedLufs: -14, peakDb: -1.0 }; // neutral defaults
+  }
+
   // Prefer real Internet Archive search over static items
   async searchInternetArchive(query, limit = 20) {
     const https = require('https');
@@ -364,6 +370,43 @@ class StreamingService extends BaseStreamingService {
       } catch { /* next */ }
     }
     return null;
+  }
+
+  // --- Offline download helpers ---
+  async downloadTrackToFile(track, targetDir) {
+    try {
+      const { net } = require('electron');
+      const fs = require('fs');
+      const path = require('path');
+      const toProxy = (u) => `celes-stream://proxy?u=${encodeURIComponent(u)}`;
+      let streamUrl = track.streamUrl;
+      if (!streamUrl) {
+        const res = await this.getStreamUrlWithFallback(track.id, track.platform||'youtube');
+        streamUrl = res?.streamUrl || null;
+      }
+      if (!streamUrl) throw new Error('No stream URL');
+      const finalUrl = toProxy(streamUrl);
+      const safe = (s)=> String(s||'').replace(/[^a-z0-9\-_. ]+/gi,'').slice(0,80);
+      const filename = `${safe(track.artist)} - ${safe(track.title)}.m4a`;
+      const outPath = path.join(targetDir, filename);
+      const response = await net.fetch(finalUrl);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const contentType = response.headers.get('content-type') || 'audio/m4a';
+      const file = fs.createWriteStream(outPath);
+      const reader = response.body.getReader();
+      let written = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        file.write(Buffer.from(value));
+        written += value.length;
+      }
+      file.end();
+      return { path: outPath, bytes: written, contentType };
+    } catch (e) {
+      console.error('Download failed:', e);
+      throw e;
+    }
   }
 
   getSupportedPlatforms() {
