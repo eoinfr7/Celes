@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Heart, Plus, ListPlus } from 'lucide-react'
 
 const THEMES = [
   { name: 'Midnight', vars: { '--primary': '221.2 83.2% 53.3%', '--background': '0 0% 4%', '--foreground': '0 0% 100%' } },
@@ -212,10 +212,11 @@ export default function App() {
   async function crossfadeTo(srcUrl){
     const a = audioRef.current
     const b = nextAudioRef.current
-    if (!a || !b || !srcUrl){ return }
-    if (!crossfadeOn || a.paused){
+    if (!a || !srcUrl){ return }
+    // If crossfade disabled or we don't have a second element, play directly
+    if (!crossfadeOn || a.paused || !b){
       a.src = srcUrl
-      await a.play().catch(()=>{})
+      try { await a.play() } catch {}
       setIsPlaying(!a.paused)
       return
     }
@@ -326,6 +327,23 @@ export default function App() {
       const prefPlat = track.platform || 'youtube'
       const result = await window.electronAPI.getStreamUrlWithFallback(track.id, prefPlat).catch(() => null)
       if (result?.streamUrl) src = toProxy(result.streamUrl)
+    }
+    // Intelligent fallback: if primary resolution failed, try re-searching by title+artist and pick first playable
+    if (!src) {
+      try {
+        const q = [track.artist, track.title].filter(Boolean).join(' ')
+        const alts = await window.electronAPI.searchMusicWithFallback(q, 'youtube', 5)
+        if (Array.isArray(alts)) {
+          for (const cand of alts) {
+            const got = await window.electronAPI.getStreamUrlWithFallback(cand.id, cand.platform||'youtube').catch(()=>null)
+            if (got?.streamUrl) {
+              src = toProxy(got.streamUrl)
+              track = { ...cand }
+              break
+            }
+          }
+        }
+      } catch {}
     }
     if (!src) return
     ensureAudioGraph(); if (eqOn) applyEqGains(eqGains)
@@ -848,25 +866,33 @@ export default function App() {
                 <div key={t.id} className="bg-neutral-900 border border-neutral-800 rounded p-3 flex flex-col gap-2">
                   <img alt={t.title} src={t.thumbnail || 'https://via.placeholder.com/300x200/4a9eff/ffffff?text=♫'} className="w-full h-36 object-cover rounded" />
                   <div className="text-sm font-medium line-clamp-2">{t.title}</div>
-                  <div className="text-xs text-neutral-400">{t.artist} • {t.platform}</div>
-                  <div className="flex gap-2">
-                    <Button className="mt-1 flex-1" onClick={() => doPlay(t)}>Play</Button>
-                      <Button className="mt-1" variant="ghost" onClick={() => addToQueue(t)}>+ Queue</Button>
-                        <Button className="mt-1" variant="ghost" onClick={async ()=>{
-                          const url = prompt('Import playlist from URL (Spotify or Apple Music):')
-                          if (!url) return
-                          const data = await window.electronAPI.importPlaylistUrl?.(url)
-                          if (!data) { alert('Could not import'); return }
-                          const name = data.name || 'Imported Playlist'
-                          await createPlaylist(name)
-                          const pl = playlists.find(p=>p.name===name) || (await reloadPlaylists(), playlists.find(p=>p.name===name))
-                          const pid = pl?.id
-                          for (const it of (data.items||[])) {
-                            const search = await window.electronAPI.searchMusicWithFallback(`${it.artist} ${it.title}`, 'youtube', 1)
-                            if (Array.isArray(search) && search[0]) { await addTrackToDbPlaylist(pid, search[0]) }
-                          }
-                          alert('Imported '+(data.items?.length||0)+' tracks to '+name)
-                        }}>Import</Button>
+                      <div className="text-xs text-neutral-400 flex items-center justify-between">
+                        <span>{t.artist} • {t.platform}</span>
+                        <span className="flex items-center gap-2">
+                          <button className="p-1 hover:text-primary" title="Add to queue" onClick={() => addToQueue(t)}><ListPlus size={16}/></button>
+                          <button className="p-1 hover:text-primary" title="Like" onClick={async () => { const id = await persistTrack(t); if (id) await window.electronAPI.toggleLikeSong?.(id) }}><Heart size={16}/></button>
+                          <button className="p-1 hover:text-primary" title="Add to playlist" onClick={async () => {
+                            let pid = activePlaylistId
+                            if (!pid || !playlists.find(p=>p.id===pid)) {
+                              const names = playlists.map((p, i) => `${i+1}. ${p.name}`)
+                              const choice = prompt(`Add to which playlist?\n${names.join('\n')}\nOr type a new name:`)
+                              if (!choice) return
+                              const idx = Number(choice)-1
+                              if (Number.isInteger(idx) && idx >= 0 && idx < playlists.length) pid = playlists[idx].id
+                              else { await createPlaylist(choice.trim()); pid = playlists[playlists.length-1]?.id }
+                            }
+                            await addTrackToDbPlaylist(pid, t)
+                          }}><Plus size={16}/></button>
+                        </span>
+                      </div>
+                      <div className="mt-1">
+                        <Button className="w-full" onClick={() => doPlay(t)}>Play</Button>
+                      </div>
+                      {/* Trimmed action set in Spotify-like compact row */}
+                      {/* Removed Import button as requested */}
+                      {/* Removed duplicate +Queue and ♥ buttons in favor of icon row */}
+                      {/* Keep Radio action minimal */}
+                      <div className="hidden">
                         <Button className="mt-1" variant="ghost" onClick={async () => {
                           let pid = activePlaylistId
                           if (!pid || !playlists.find(p=>p.id===pid)) {
@@ -879,10 +905,6 @@ export default function App() {
                           }
                           await addTrackToDbPlaylist(pid, t)
                         }}>+ Playlist</Button>
-                        <Button className="mt-1" variant="ghost" onClick={async () => {
-                          const id = await persistTrack(t)
-                          if (id) await window.electronAPI.toggleLikeSong?.(id)
-                        }}>♥</Button>
                       </div>
                     </div>
                   ))}
@@ -955,6 +977,7 @@ export default function App() {
             <div className="bg-neutral-900 border border-neutral-800 rounded p-3">
               <div className="text-sm font-semibold mb-2">Now playing</div>
               <audio id="audio-el" ref={audioRef} controls className="w-full" />
+              <audio id="audio-next" ref={nextAudioRef} className="hidden" />
             </div>
             <div className="bg-neutral-900 border border-neutral-800 rounded p-3">
               <div className="text-sm font-semibold mb-2">Playlists</div>
