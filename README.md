@@ -2,7 +2,6 @@
 
 An open‑source desktop music player named after the FFVI character Celes and inspired by astronomy. Play local files and stream from YouTube and SoundCloud — no login.
 
-<img width="92" height="34" alt="Screenshot 2025-08-08 at 4 45 37 AM" src="https://github.com/user-attachments/assets/467989a6-75d2-4a1a-a5d4-a2af8f66cd8c" />
 <img width="1710" height="1069" alt="Screenshot 2025-08-08 at 5 59 25 AM" src="https://github.com/user-attachments/assets/3a5b8240-718d-40ee-8316-be6735738e37" />
 
 ## Features
