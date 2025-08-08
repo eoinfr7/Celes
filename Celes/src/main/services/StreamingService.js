@@ -834,17 +834,10 @@ class StreamingService extends BaseStreamingService {
       } catch {}
     }
 
+    // Only show these two sections per request
     const sections = [
       { key: 'newReleases', title: 'New Releases', queries: ['new music 2025 official audio', 'new releases this week official audio', 'brand new single 2025'] },
       { key: 'trending', title: 'Trending Now', queries: ['trending music 2025', 'viral hits 2025', 'hot music now 2025'] },
-      { key: 'chill', title: 'Chill', queries: ['chill music official audio', 'chill pop 2025', 'lofi hip hop beats'] },
-      { key: 'focus', title: 'Focus', queries: ['focus music ambient instrumental', 'study music deep focus', 'concentration ambient'] },
-      { key: 'workout', title: 'Workout', queries: ['workout hits 2025', 'gym pump edm', 'running playlist 2025'] },
-      { key: 'party', title: 'Party', queries: ['party hits 2025', 'dance pop 2025', 'club hits 2025'] },
-      { key: 'throwback', title: 'Throwback', queries: ['2000s hits', '2010s hits', '90s throwback'] },
-      { key: 'hiphop', title: 'Hip-Hop', queries: ['hip hop 2025 official audio', 'rap 2025', 'trap 2025'] },
-      { key: 'pop', title: 'Pop', queries: ['pop hits 2025', 'top pop 2025', 'new pop 2025'] },
-      { key: 'indie', title: 'Indie', queries: ['indie 2025 official audio', 'indie rock 2025', 'bedroom pop 2025'] },
     ]
 
     const limit = 12;
@@ -864,7 +857,7 @@ class StreamingService extends BaseStreamingService {
       const base = await Promise.allSettled(queries.map(q=> super.searchMusic(q, 'youtube', limit*2)));
       const fill = base.filter(x=>x.status==='fulfilled').flatMap(x=>x.value||[]);
       for (const t of fill) { const key = String(t.id); if (!seen2.has(key)) { seen2.add(key); collected.push(t); if (collected.length >= limit) break; } }
-      return collected.slice(0, limit);
+      return this.filterExploreItems(collected).slice(0, limit);
     };
 
     const cached = readCache(60*60*1000);
@@ -875,17 +868,12 @@ class StreamingService extends BaseStreamingService {
     }
 
     const out = {};
-    // Build trending quickly
+    // Build trending first
     const trending = await tryQueries(sections.find(s=>s.key==='trending').queries);
-    out.trending = trending;
-    // Build other sections in parallel
-    const rest = sections.filter(s=>s.key!=='trending');
-    const built = await Promise.allSettled(rest.map(s=> tryQueries(s.queries)));
-    rest.forEach((s, idx) => {
-      const val = built[idx];
-      const arr = (val.status==='fulfilled' ? (val.value||[]) : []);
-      out[s.key] = arr.length ? arr : trending.slice(0, limit);
-    });
+    out.trending = this.filterExploreItems(trending).slice(0, limit);
+    // Build new releases and fall back to trending if empty
+    const newRel = await tryQueries(sections.find(s=>s.key==='newReleases').queries);
+    out.newReleases = (newRel && newRel.length) ? this.filterExploreItems(newRel).slice(0, limit) : out.trending.slice(0, limit);
 
     // If everything is empty, fall back to generic safe queries and finally cache
     const totalCount = Object.values(out).reduce((n, arr) => n + ((arr || []).length), 0);
@@ -897,6 +885,76 @@ class StreamingService extends BaseStreamingService {
     // Persist cache and return
     try { writeCache(out) } catch {}
     return out;
+  }
+
+  filterExploreItems(items) {
+    try {
+      const badTitle = /(\bmix\b|full album|playlist|dj set|live set|compilation|nightcore|8d|sped up|slowed|mashup|hour)/i;
+      const tasteful = [];
+      const seen = new Set();
+      for (const t of items || []) {
+        if (!t || !t.title) continue;
+        const id = String(t.id);
+        if (seen.has(id)) continue; seen.add(id);
+        const dur = Number(t.duration) || 0;
+        if (dur > 12 * 60) continue; // exclude excessively long
+        const title = String(t.title);
+        if (badTitle.test(title)) continue;
+        // drop titles with too many emojis/punct
+        const emojiLike = (title.match(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu) || []).length;
+        const punctRuns = /!{3,}|\?{3,}/.test(title);
+        if (emojiLike > 3 || punctRuns) continue;
+        tasteful.push(t);
+      }
+      return tasteful;
+    } catch { return Array.isArray(items)? items.slice(0) : [] }
+  }
+
+  buildSearchHistoryBuckets(perArtist = 3, totalMax = 12) {
+    try {
+      const cache = this.searchCache || new Map();
+      const buckets = [];
+      // Collect recent YouTube queries and compress into artist buckets
+      const entries = Array.from(cache.entries());
+      // newest last; prefer most recent
+      entries.reverse();
+      const seenArtists = new Set();
+      let total = 0;
+      for (const [key, entry] of entries) {
+        if (!entry || !Array.isArray(entry.results)) continue;
+        const [platform, query] = (key || '').split(':').slice(0,2);
+        if (platform !== 'youtube') continue;
+        const byArtist = new Map();
+        for (const t of entry.results) {
+          const artist = (t && t.artist) ? String(t.artist).trim() : '';
+          if (!artist) continue;
+          if (!byArtist.has(artist)) byArtist.set(artist, []);
+          byArtist.get(artist).push(t);
+        }
+        // Pick dominant artist for this query
+        const ranked = Array.from(byArtist.entries()).sort((a,b)=> (b[1].length)-(a[1].length));
+        for (const [artist, list] of ranked) {
+          if (seenArtists.has(artist)) continue;
+          const filtered = this.filterExploreItems(list).slice(0, perArtist);
+          if (filtered.length === 0) continue;
+          buckets.push({ title: artist, results: filtered });
+          seenArtists.add(artist);
+          total += filtered.length;
+          if (total >= totalMax) break;
+        }
+        if (total >= totalMax) break;
+      }
+      // Trim excess if any
+      let running = 0;
+      const final = [];
+      for (const b of buckets) {
+        if (running >= totalMax) break;
+        const allow = Math.min(perArtist, totalMax - running);
+        final.push({ title: b.title, results: b.results.slice(0, allow) });
+        running += allow;
+      }
+      return final;
+    } catch { return [] }
   }
 
   // --- Artist helpers ---

@@ -409,10 +409,12 @@ class IPCHandlers {
 
     ipcMain.handle('get-explore-sections', async () => {
       try {
-        return await this.streamingService.getExploreSections();
+        const base = await this.streamingService.getExploreSections();
+        const historyBuckets = this.streamingService.buildSearchHistoryBuckets(3, 12);
+        return { ...base, historyBuckets };
       } catch (error) {
         console.error('Error getting explore sections:', error);
-        return {};
+        return { historyBuckets: [] };
       }
     });
 

@@ -331,8 +331,8 @@ export default function App() {
       setDailyMix([])
       const ex = await window.electronAPI.getExploreSections?.()
       setExplore(ex || {})
-      const hist = await window.electronAPI.getSearchHistory?.()
-      setExploreHistory(Array.isArray(hist)? hist: [])
+      const buckets = Array.isArray(ex?.historyBuckets) ? ex.historyBuckets : []
+      setExploreHistory(buckets)
       setChartsSC([])
       setFollowedFeed([])
       setChartsDate(new Date().toLocaleDateString())
@@ -1017,17 +1017,13 @@ export default function App() {
                     <>
                       <SectionCard title={`New Releases • ${chartsDate}`} items={explore.newReleases||[]} />
                       <SectionCard title={`Trending Now • ${chartsDate}`} items={explore.trending||[]} />
-                      <SectionCard title={`Chill`} items={explore.chill||[]} />
-                      <SectionCard title={`Focus`} items={explore.focus||[]} />
-                      <SectionCard title={`Workout`} items={explore.workout||[]} />
-                      <SectionCard title={`Party`} items={explore.party||[]} />
-                      <SectionCard title={`Throwback`} items={explore.throwback||[]} />
-                      <SectionCard title={`Hip‑Hop`} items={explore.hiphop||[]} />
-                      <SectionCard title={`Pop`} items={explore.pop||[]} />
-                      <SectionCard title={`Indie`} items={explore.indie||[]} />
-                      {exploreHistory.map((b, i)=> (
-                        <SectionCard key={`hist_${i}`} title={`From your searches: ${b.query}`} items={b.results||[]} />
-                      ))}
+                      {exploreHistory.length>0 && (
+                        <div className="space-y-3">
+                          {exploreHistory.map((b, i)=> (
+                            <SectionCard key={`hist_${i}`} title={`From ${b.title}`} items={b.results||[]} />
+                          ))}
+                        </div>
+                      )}
                     </>
                   )}
                   {!explore && <div className="text-sm text-muted-foreground">Loading explore…</div>}
