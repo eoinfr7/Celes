@@ -389,6 +389,95 @@ class StreamingService extends BaseStreamingService {
     if (platform === 'soundcloud') return this.getSoundCloudTop(limit);
     return [];
   }
+
+  // --- Artist helpers ---
+  normalizeArtistName(name) {
+    try {
+      let n = String(name || '').trim();
+      n = n.replace(/\b-\s*Topic\b/gi, '').replace(/\bVEVO\b/gi, '').replace(/\s*\(official.*?\)/gi, '').trim();
+      n = n.replace(/feat\.|ft\.|featuring/gi, ',');
+      // keep first primary credit
+      n = n.split(',')[0].split('&')[0].split(' x ')[0].trim();
+      return n;
+    } catch { return String(name || '').trim(); }
+  }
+
+  async getSimilarArtists(artistName, limit = 12) {
+    try {
+      const baseName = this.normalizeArtistName(artistName);
+      const queries = [
+        `${baseName} similar artists`,
+        `${baseName} fans also like`,
+        `${baseName} related artists`,
+        `artists like ${baseName}`
+      ];
+      const counts = new Map();
+      const sample = new Map();
+      for (const q of queries) {
+        const list = await this.searchMusicWithFallback(q, 'youtube', 30).catch(() => []);
+        for (const t of list || []) {
+          const a = this.normalizeArtistName(t.artist || '');
+          if (!a || a.toLowerCase() === baseName.toLowerCase()) continue;
+          counts.set(a, (counts.get(a) || 0) + 1);
+          if (!sample.has(a)) sample.set(a, t);
+        }
+      }
+      const ranked = [...counts.entries()].sort((a,b)=>b[1]-a[1]).slice(0, Math.max(limit*2, limit));
+      const out = ranked.map(([name]) => {
+        const t = sample.get(name) || {};
+        return { name, thumbnail: t.thumbnail || '', sampleTrack: t };
+      }).slice(0, limit);
+      return out;
+    } catch (e) {
+      console.error('Error getting similar artists:', e);
+      return [];
+    }
+  }
+
+  async getArtistTopTracks(artistName, limit = 10) {
+    try {
+      const base = this.normalizeArtistName(artistName);
+      const queries = [
+        `${base} top songs`,
+        `best of ${base}`,
+        `${base} popular tracks`,
+        `${base}`
+      ];
+      const seen = new Set();
+      const out = [];
+      for (const q of queries) {
+        const res = await this.searchMusicWithFallback(q, 'youtube', 40).catch(()=>[]);
+        for (const t of res) {
+          const a = this.normalizeArtistName(t.artist || '');
+          if (!a || a.toLowerCase() !== base.toLowerCase()) continue;
+          const key = `${t.platform}:${t.id}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          out.push(t);
+          if (out.length >= limit) break;
+        }
+        if (out.length >= limit) break;
+      }
+      return out.slice(0, limit);
+    } catch (e) {
+      console.error('Error getting artist top tracks:', e);
+      return [];
+    }
+  }
+
+  async getArtistOverview(artistName, limits = { top: 10, similar: 12 }) {
+    try {
+      const [topTracks, similarArtists] = await Promise.all([
+        this.getArtistTopTracks(artistName, limits.top || 10),
+        this.getSimilarArtists(artistName, limits.similar || 12)
+      ]);
+      const headerImage = (topTracks[0] && (topTracks[0].thumbnail || '')) || '';
+      return { artist: artistName, headerImage, topTracks, similarArtists, about: null };
+    } catch (e) {
+      console.error('Error getting artist overview:', e);
+      return { artist: artistName, headerImage: '', topTracks: [], similarArtists: [], about: null };
+    }
+  }
 }
 
 module.exports = StreamingService;

@@ -406,6 +406,24 @@ class IPCHandlers {
       }
     });
 
+    ipcMain.handle('get-artist-overview', async (event, artistName, limits) => {
+      try {
+        return await this.streamingService.getArtistOverview(artistName, limits);
+      } catch (error) {
+        console.error('Error getting artist overview:', error);
+        return { artist: artistName, headerImage: '', topTracks: [], similarArtists: [], about: null };
+      }
+    });
+
+    ipcMain.handle('get-similar-artists', async (event, artistName, limit) => {
+      try {
+        return await this.streamingService.getSimilarArtists(artistName, limit);
+      } catch (error) {
+        console.error('Error getting similar artists:', error);
+        return [];
+      }
+    });
+
     // Platform functionality
     ipcMain.handle('get-supported-platforms', async () => {
       return this.streamingService.getSupportedPlatforms();

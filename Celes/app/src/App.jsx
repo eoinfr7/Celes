@@ -41,6 +41,7 @@ export default function App() {
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
   const [view, setView] = useState('home')
+  const [artistView, setArtistView] = useState(null)
   const platforms = useMemo(() => ['soundcloud', 'internetarchive'], [])
   const [platform] = useState('soundcloud')
   const [queue, setQueue] = useState([])
@@ -357,7 +358,7 @@ export default function App() {
           <div key={t.id} className="bg-neutral-900/60 border border-neutral-800 rounded p-3 flex flex-col gap-2">
             <img alt={t.title} src={t.thumbnail || 'https://via.placeholder.com/300x200/4a9eff/ffffff?text=♫'} className="w-full h-36 object-cover rounded" />
             <div className="text-sm font-medium line-clamp-2">{t.title}</div>
-            <div className="text-xs text-neutral-400">{t.artist} • {t.platform}</div>
+            <div className="text-xs text-neutral-400"><button className="underline" onClick={()=>loadArtist(t.artist)}>{t.artist}</button> • {t.platform}</div>
             <div className="flex gap-2">
               <Button className="mt-1 flex-1" onClick={() => doPlay(t)}>Play</Button>
               <Button className="mt-1" variant="ghost" onClick={() => addToQueue(t)}>+ Queue</Button>
@@ -404,6 +405,13 @@ export default function App() {
       if (saved) applyThemeVars(saved)
     } catch {}
   }, [])
+
+  async function loadArtist(name){
+    if (!name) return
+    const data = await window.electronAPI.getArtistOverview?.(name, { top: 10, similar: 12 })
+    setArtistView({ name, data })
+    setView('artist')
+  }
 
   function ThemePanel() {
     const [primary, setPrimary] = useState(getComputedStyle(document.documentElement).getPropertyValue('--primary'))
@@ -582,6 +590,33 @@ export default function App() {
                   ))}
                 </div>
               </>
+            )}
+            {view === 'artist' && artistView && (
+              <div className="space-y-4">
+                <div className="h-40 rounded bg-neutral-900 border border-neutral-800 overflow-hidden flex items-end p-4" style={{backgroundImage:`url(${artistView.data?.headerImage||''})`, backgroundSize:'cover', backgroundPosition:'center'}}>
+                  <div className="text-3xl font-extrabold drop-shadow-md">{artistView.name}</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button onClick={()=>{ const top=artistView.data?.topTracks?.[0]; if(top) doPlay(top)}}>Play</Button>
+                  <Button variant="ghost" onClick={async ()=>{ await window.electronAPI.followArtistStreaming?.(artistView.name); alert('Following'); }}>Follow</Button>
+                </div>
+                <SectionCard title="Popular" items={artistView.data?.topTracks||[]} />
+                <div className="bg-neutral-900 border border-neutral-800 rounded p-3">
+                  <div className="text-sm font-semibold mb-2">Fans also like</div>
+                  <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}>
+                    {(artistView.data?.similarArtists||[]).map((a,i)=> (
+                      <div key={`${a.name}_${i}`} className="bg-neutral-900/60 border border-neutral-800 rounded p-3 flex flex-col gap-2">
+                        <img alt={a.name} src={a.thumbnail || 'https://via.placeholder.com/300x200/4a9eff/ffffff?text=★'} className="w-full h-36 object-cover rounded" />
+                        <div className="text-sm font-medium line-clamp-2">{a.name}</div>
+                        <div className="flex gap-2">
+                          <Button className="mt-1" onClick={()=>loadArtist(a.name)}>Open</Button>
+                          {a.sampleTrack && <Button className="mt-1" variant="ghost" onClick={()=>doPlay(a.sampleTrack)}>Play sample</Button>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
             )}
           </section>
 
