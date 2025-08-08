@@ -99,7 +99,11 @@ export default function App() {
   const [videoOn, setVideoOn] = useState(false)
   const videoRef = useRef(null)
   const [videoUrl, setVideoUrl] = useState(null)
-  const [miniDockOn, setMiniDockOn] = useState(false)
+  const [miniDockOn, setMiniDockOn] = useState(() => { try { return localStorage.getItem('celes.miniDockOn') === 'true' } catch { return false } })
+  const [dockVisOn, setDockVisOn] = useState(false)
+  const [dockVideoOn, setDockVideoOn] = useState(false)
+  const dockVideoRef = useRef(null)
+  const [dockVideoUrl, setDockVideoUrl] = useState(null)
 
   function deriveYouTubeId(track){
     try {
@@ -483,7 +487,7 @@ export default function App() {
     try { if (audioRef.current) audioRef.current.volume = volume } catch {}
     try { if (nextAudioRef.current) nextAudioRef.current.volume = volume } catch {}
     const onTime = () => { if (!isSeekingRef.current) setProgress(audio.currentTime || 0) }
-    const onTimeLyrics = () => updateActiveLyric(audio.currentTime||0)
+    // lyrics handled by RAF loop for tighter sync
     const onDur = () => setDuration(audio.duration || 0)
     const onSeeking = () => { /* no-op, we manage via ref */ }
     const onSeeked = () => { isSeekingRef.current = false }
@@ -491,7 +495,7 @@ export default function App() {
     const onPlay = () => setIsPlaying(true)
     const onPause = () => setIsPlaying(false)
     audio.addEventListener('timeupdate', onTime)
-    audio.addEventListener('timeupdate', onTimeLyrics)
+    // audio.addEventListener('timeupdate', onTimeLyrics)
     audio.addEventListener('durationchange', onDur)
     audio.addEventListener('seeking', onSeeking)
     audio.addEventListener('seeked', onSeeked)
@@ -500,7 +504,7 @@ export default function App() {
     audio.addEventListener('pause', onPause)
     return () => {
       audio.removeEventListener('timeupdate', onTime)
-      audio.removeEventListener('timeupdate', onTimeLyrics)
+      // audio.removeEventListener('timeupdate', onTimeLyrics)
       audio.removeEventListener('durationchange', onDur)
       audio.removeEventListener('seeking', onSeeking)
       audio.removeEventListener('seeked', onSeeked)
@@ -512,6 +516,21 @@ export default function App() {
 
   useEffect(() => { try { localStorage.setItem('celes.volume', String(volume)) } catch {} ; try { if (audioRef.current) audioRef.current.volume = volume } catch {}; try { if (nextAudioRef.current) nextAudioRef.current.volume = volume } catch {} }, [volume])
   useEffect(() => { window.electronAPI.streamingHealthCheck?.() }, [])
+  useEffect(() => { try { localStorage.setItem('celes.miniDockOn', String(miniDockOn)) } catch {} }, [miniDockOn])
+  // High-frequency lyrics sync to reduce perceived lag
+  useEffect(() => {
+    if (!lyricsEnabled) return
+    let raf = 0
+    const loop = () => {
+      try {
+        const a = getActiveEl()
+        if (a && !a.paused) updateActiveLyric(a.currentTime || 0)
+      } catch {}
+      raf = requestAnimationFrame(loop)
+    }
+    raf = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(raf)
+  }, [lyricsEnabled, activeSide])
   useEffect(() => {
     const onCmd = (payload) => {
       try {
@@ -566,6 +585,35 @@ export default function App() {
     draw()
     return ()=>{ cancelAnimationFrame(raf); window.removeEventListener('resize', onRes) }
   }, [theaterOn])
+  // Visualizer for Dock
+  useEffect(()=>{
+    if (!dockVisOn) return
+    let raf = 0
+    const canvas = document.getElementById('dock-vis')
+    const analyser = analyserRef.current
+    if (!canvas || !analyser) return
+    const ctx2d = canvas.getContext('2d')
+    const dpr = window.devicePixelRatio || 1
+    const resize = ()=>{ canvas.width = canvas.clientWidth*dpr; canvas.height = canvas.clientHeight*dpr }
+    resize(); const onRes=()=>resize(); window.addEventListener('resize', onRes)
+    const data = new Uint8Array(analyser.frequencyBinCount)
+    const draw = ()=>{
+      raf = requestAnimationFrame(draw)
+      analyser.getByteFrequencyData(data)
+      ctx2d.clearRect(0,0,canvas.width, canvas.height)
+      const bars = 64
+      const step = Math.floor(data.length/bars)
+      const w = canvas.width/bars
+      for (let i=0;i<bars;i++){
+        const v = data[i*step]/255
+        const h = v * canvas.height*0.6
+        ctx2d.fillStyle = `hsl(210 90% ${Math.round(30+v*50)}%)`
+        ctx2d.fillRect(i*w, canvas.height-h, w*0.8, h)
+      }
+    }
+    draw()
+    return ()=>{ cancelAnimationFrame(raf); window.removeEventListener('resize', onRes) }
+  }, [dockVisOn])
   useEffect(() => {
     const onKey = (e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase()==='k') { e.preventDefault(); setPaletteOpen(v=>!v) } }
     window.addEventListener('keydown', onKey)
@@ -870,7 +918,6 @@ export default function App() {
           <Button variant="ghost" onClick={()=>setThemeOpen(v=>!v)}>Theme</Button>
           <Button variant="ghost" onClick={()=>setSettingsOpen(v=>!v)}>Settings</Button>
           <Button variant="ghost" onClick={()=>setMiniDockOn(v=>!v)}>{miniDockOn? 'Hide Dock':'Dock'}</Button>
-          <Button variant="ghost" onClick={async()=>{ const res = await window.electronAPI.openMiniPlayer?.(); if(!res?.success){ alert('Mini failed to open') } }}>Mini</Button>
           <div className="md:hidden flex-1" />
         </header>
 
@@ -1081,8 +1128,36 @@ export default function App() {
       {themeOpen && <ThemePanel />}
       {settingsOpen && <SettingsPanel />}
       {miniDockOn && (
-        <div className="fixed bottom-24 right-4 z-40 bg-neutral-900/95 border border-neutral-800 rounded shadow-xl p-3 w-[320px]">
-          <div className="text-sm font-semibold mb-2">Mini Dock</div>
+        <div className="fixed bottom-24 right-4 z-40 bg-neutral-900/95 border border-neutral-800 rounded shadow-xl p-3 w-[340px]">
+          <div className="text-sm font-semibold mb-2 flex items-center justify-between">
+            <span>Mini Dock</span>
+            <span className="text-[11px] text-neutral-400 flex items-center gap-2">
+              <label className="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={dockVisOn} onChange={(e)=>setDockVisOn(e.target.checked)} /> Vis</label>
+              <label className="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={dockVideoOn} onChange={async (e)=>{
+                const on = e.target.checked
+                setDockVideoOn(on)
+                if (on) {
+                  try {
+                    let vid = deriveYouTubeId(currentTrack)
+                    if (!vid && currentTrack){
+                      const q = [currentTrack.artist, currentTrack.title].filter(Boolean).join(' ')
+                      const found = await window.electronAPI.searchMusicWithFallback?.(q, 'youtube', 3)
+                      const cand = Array.isArray(found) ? found.find(x=> String(x?.id||'').length===11) : null
+                      if (cand) vid = String(cand.id).slice(0,11)
+                    }
+                    if (!vid) { setDockVideoOn(false); return }
+                    const res = await window.electronAPI.getYouTubeVideoStream?.(vid)
+                    const url = res?.streamUrl
+                    if (!url) { setDockVideoOn(false); return }
+                    setDockVideoUrl(`celes-stream://proxy?u=${encodeURIComponent(url)}`)
+                  } catch { setDockVideoOn(false) }
+                } else {
+                  setDockVideoUrl(null)
+                  try { if (dockVideoRef.current) { dockVideoRef.current.pause(); dockVideoRef.current.src = '' } } catch {}
+                }
+              }} /> Video</label>
+            </span>
+          </div>
           <div className="flex items-center gap-3">
             <img src={currentTrack?.thumbnail || 'https://via.placeholder.com/48'} className="w-12 h-12 rounded object-cover"/>
             <div className="flex-1 min-w-0">
@@ -1095,6 +1170,15 @@ export default function App() {
               <button className="p-2 rounded hover:bg-neutral-800" onClick={()=>nextFromQueue()}><SkipForward size={16}/></button>
             </div>
           </div>
+          {(dockVisOn || dockVideoOn) && (
+            <div className="mt-2 rounded overflow-hidden border border-neutral-800 bg-black/60" style={{height: 120}}>
+              {dockVideoOn ? (
+                <video ref={dockVideoRef} src={dockVideoUrl||''} className="w-full h-full object-contain bg-black" muted playsInline autoPlay onCanPlay={()=>{ try { dockVideoRef.current?.play?.() } catch {} }} />
+              ) : (
+                <canvas id="dock-vis" className="w-full h-full" />
+              )}
+            </div>
+          )}
           <div className="mt-2 flex items-center gap-2">
             <input type="range" min={0} max={1} step={0.01} value={volume} onChange={(e)=>setVolume(Number(e.target.value))} className="flex-1 accent-primary" />
             <button className="text-xs text-neutral-400" onClick={()=>setMiniDockOn(false)}>Close</button>
