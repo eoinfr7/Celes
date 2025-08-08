@@ -408,7 +408,7 @@ export default function App() {
 
   async function loadArtist(name){
     if (!name) return
-    const data = await window.electronAPI.getArtistOverview?.(name, { top: 10, similar: 12 })
+    const data = await window.electronAPI.getArtistOverview?.(name, { top: 10, similar: 12 }, { force:false })
     setArtistView({ name, data })
     setView('artist')
   }
@@ -608,6 +608,9 @@ export default function App() {
                     <div className="text-sm font-semibold mb-1">About (auto)</div>
                     <div className="text-xs text-neutral-300 leading-relaxed">{artistView.data.about.extract}</div>
                     <div className="text-[11px] text-neutral-500 mt-1">Source: {artistView.data.about.source}</div>
+                    <div className="mt-2">
+                      <Button variant="ghost" onClick={async ()=>{ const data = await window.electronAPI.getArtistOverview?.(artistView.name, { top: 10, similar: 12 }, { force:true }); setArtistView({ name: artistView.name, data }); }}>Refresh</Button>
+                    </div>
                   </div>
                 )}
                 <SectionCard title="Popular" items={artistView.data?.topTracks||[]} />

@@ -406,9 +406,9 @@ class IPCHandlers {
       }
     });
 
-    ipcMain.handle('get-artist-overview', async (event, artistName, limits) => {
+    ipcMain.handle('get-artist-overview', async (event, artistName, limits, options) => {
       try {
-        return await this.streamingService.getArtistOverview(artistName, limits);
+        return await this.streamingService.getArtistOverview(artistName, limits, options);
       } catch (error) {
         console.error('Error getting artist overview:', error);
         return { artist: artistName, headerImage: '', topTracks: [], similarArtists: [], about: null };

@@ -96,7 +96,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getReleaseRadar: (limit) => ipcRenderer.invoke('get-release-radar', limit),
   getTopCharts: (platform, limit) => ipcRenderer.invoke('get-top-charts', platform, limit),
   getArtistTracks: (artistName, limit) => ipcRenderer.invoke('get-artist-tracks', artistName, limit),
-  getArtistOverview: (artistName, limits) => ipcRenderer.invoke('get-artist-overview', artistName, limits),
+  getArtistOverview: (artistName, limits, options) => ipcRenderer.invoke('get-artist-overview', artistName, limits, options),
   getSimilarArtists: (artistName, limit) => ipcRenderer.invoke('get-similar-artists', artistName, limit),
   getSimilarTracks: (trackId, platform, limit) => ipcRenderer.invoke('get-similar-tracks', trackId, platform, limit),
   followArtistStreaming: (artistName) => ipcRenderer.invoke('follow-artist-streaming', artistName),

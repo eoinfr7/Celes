@@ -1,4 +1,7 @@
 const BaseStreamingService = require('./StreamingService.js.backup');
+const { app } = require('electron');
+const fs = require('fs');
+const path = require('path');
 
 class StreamingService extends BaseStreamingService {
   constructor() {
@@ -50,6 +53,43 @@ class StreamingService extends BaseStreamingService {
         req.on('timeout', () => { try { req.destroy(); } catch {} reject(new Error('timeout')); });
       } catch (e) { reject(e); }
     });
+  }
+
+  // --- Simple disk cache for artist overviews
+  getArtistCachePath(artistName) {
+    try {
+      const dir = path.join(app.getPath('userData'), 'artist-cache');
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      const slug = String(artistName || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/gi, '-')
+        .replace(/^-+|-+$/g, '') || 'unknown';
+      return path.join(dir, `${slug}.json`);
+    } catch {
+      return null;
+    }
+  }
+
+  readArtistCache(artistName, ttlMs = 24*60*60*1000) {
+    try {
+      const p = this.getArtistCachePath(artistName);
+      if (!p || !fs.existsSync(p)) return null;
+      const json = JSON.parse(fs.readFileSync(p, 'utf8'));
+      if (json && Number.isFinite(json.ts) && (Date.now() - json.ts) < ttlMs) {
+        return json.data || null;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  writeArtistCache(artistName, data) {
+    try {
+      const p = this.getArtistCachePath(artistName);
+      if (!p) return;
+      fs.writeFileSync(p, JSON.stringify({ ts: Date.now(), data }, null, 2));
+    } catch { /* ignore */ }
   }
 
   async searchYouTubePiped(query, limit = 20) {
@@ -594,8 +634,13 @@ class StreamingService extends BaseStreamingService {
     } catch { return null; }
   }
 
-  async getArtistOverview(artistName, limits = { top: 10, similar: 12 }) {
+  async getArtistOverview(artistName, limits = { top: 10, similar: 12 }, options = {}) {
     try {
+      const { force = false, ttlMs = 24*60*60*1000 } = options || {};
+      if (!force) {
+        const cached = this.readArtistCache(artistName, ttlMs);
+        if (cached) return cached;
+      }
       const [topTracks, similarArtists, wiki, ytSubs, scFollows, spotBio] = await Promise.all([
         this.getArtistTopTracks(artistName, limits.top || 10),
         this.getSimilarArtists(artistName, limits.similar || 12),
@@ -608,7 +653,9 @@ class StreamingService extends BaseStreamingService {
       const about = spotBio || wiki || null;
       const followers = (ytSubs || 0) + (scFollows || 0) || null;
       const followersBreakdown = { youtube: ytSubs || null, soundcloud: scFollows || null };
-      return { artist: artistName, headerImage, topTracks, similarArtists, about, followers, followersBreakdown };
+      const overview = { artist: artistName, headerImage, topTracks, similarArtists, about, followers, followersBreakdown };
+      this.writeArtistCache(artistName, overview);
+      return overview;
     } catch (e) {
       console.error('Error getting artist overview:', e);
       return { artist: artistName, headerImage: '', topTracks: [], similarArtists: [], about: null, followers: null, followersBreakdown: {} };
