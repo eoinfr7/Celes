@@ -26,7 +26,7 @@ class StreamingService extends BaseStreamingService {
     return null;
   }
 
-  async doJsonGet(url, timeoutMs = 10000) {
+  async doJsonGet(url, timeoutMs = 8000) {
     const https = require('https');
     return new Promise((resolve, reject) => {
       try {
@@ -96,45 +96,68 @@ class StreamingService extends BaseStreamingService {
   }
 
   async searchYouTubePiped(query, limit = 20) {
-    const instances = [
-      'https://pipedapi.kavin.rocks',
-      'https://piped.video',
-      'https://piped.projectsegfau.lt',
-    ];
-    let lastErr = null;
-    for (const base of instances) {
-      try {
-        const url = `${base}/search?q=${encodeURIComponent(query)}`;
-        const json = await this.doJsonGet(url, 12000);
-        const items = Array.isArray(json) ? json : (json && json.items) || [];
-        const results = [];
-        for (const it of items) {
-          const isVideo = (it.type === 'video') || (it.duration != null && (it.url || it.url.endsWith && it.url.endsWith(it.id)));
-          const vid = it.id || (it.url && it.url.split('watch?v=')[1]) || it.url || null;
-          if (!isVideo || !vid || String(vid).length !== 11) continue;
-          results.push({
-            id: vid,
-            title: it.title || 'YouTube',
-            artist: (it.uploaderName || it.uploader || 'YouTube'),
-            duration: Number(it.duration) || 0,
-            thumbnail: (it.thumbnail || (it.thumbnails && it.thumbnails[0])) || '',
-            url: `https://www.youtube.com/watch?v=${vid}`,
-            platform: 'youtube',
-            type: 'stream',
-            streamUrl: null,
-            album: 'YouTube Music',
-            year: new Date().getFullYear(),
-          });
-          if (results.length >= limit) break;
-        }
-        if (results.length) return results;
-      } catch (e) {
-        lastErr = e;
-        continue;
+    const uniq = (arr) => {
+      const seen = new Set();
+      const out = [];
+      for (const t of arr || []) {
+        const key = String(t.id);
+        if (!seen.has(key)) { seen.add(key); out.push(t); }
       }
+      return out;
+    };
+    const listInstances = () => {
+      const defaults = [
+        'https://pipedapi.kavin.rocks',
+        'https://piped.video',
+        'https://piped.projectsegfau.lt',
+      ];
+      const pref = this.pipedPreferred && defaults.includes(this.pipedPreferred) ? [this.pipedPreferred] : [];
+      return uniq([...(pref||[]), ...defaults]);
+    };
+    const parseItems = (json) => {
+      const items = Array.isArray(json) ? json : (json && json.items) || [];
+      const results = [];
+      for (const it of items) {
+        const isVideo = (it.type === 'video') || (it.duration != null && (it.url || it.url?.includes('watch?v=')));
+        const vidRaw = it.id || (it.url && it.url.split('watch?v=')[1]) || it.url || null;
+        const vid = vidRaw ? String(vidRaw).slice(0,11) : null;
+        if (!isVideo || !vid || vid.length !== 11) continue;
+        results.push({
+          id: vid,
+          title: it.title || 'YouTube',
+          artist: (it.uploaderName || it.uploader || 'YouTube'),
+          duration: Number(it.duration) || 0,
+          thumbnail: (it.thumbnail || (it.thumbnails && it.thumbnails[0])) || '',
+          url: `https://www.youtube.com/watch?v=${vid}`,
+          platform: 'youtube',
+          type: 'stream',
+          streamUrl: null,
+          album: 'YouTube Music',
+          year: new Date().getFullYear(),
+        });
+        if (results.length >= limit) break;
+      }
+      return results;
+    };
+    const instances = listInstances();
+    const tasks = instances.map((base) => (async () => {
+      const url = `${base}/search?q=${encodeURIComponent(query)}`;
+      const json = await this.doJsonGet(url, 8000);
+      const res = parseItems(json);
+      return { base, res };
+    })());
+    try {
+      const first = await Promise.any(tasks);
+      if (first?.base) this.pipedPreferred = first.base;
+      const results = uniq(first?.res || []).slice(0, limit);
+      if (results.length >= Math.min(6, limit)) return results;
+      // Try to combine with any other successful responses without waiting too long
+      const settled = await Promise.allSettled(tasks);
+      const merged = uniq(settled.filter(x=>x.status==='fulfilled').flatMap(x=>x.value.res || []));
+      return merged.slice(0, limit);
+    } catch {
+      return [];
     }
-    if (lastErr) throw lastErr;
-    return [];
   }
 
   // Unified search override: prefer Piped for YouTube; disable SoundCloud; support Internet Archive
@@ -827,38 +850,42 @@ class StreamingService extends BaseStreamingService {
     const limit = 12;
     const tryQueries = async (queries) => {
       const seen = new Set();
-      let collected = [];
-      for (const q of queries) {
-        // Prefer Piped; if empty, fall back to base search
-        try {
-          const a = await this.searchYouTubePiped(q, limit * 2);
-          for (const t of a || []) { const key = String(t.id); if (!seen.has(key)) { seen.add(key); collected.push(t); if (collected.length >= limit) break; } }
-          if (collected.length >= limit) break;
-        } catch {}
-        if (collected.length < limit) {
-          try {
-            const b = await super.searchMusic(q, 'youtube', limit * 2);
-            for (const t of b || []) { const key = String(t.id); if (!seen.has(key)) { seen.add(key); collected.push(t); if (collected.length >= limit) break; } }
-            if (collected.length >= limit) break;
-          } catch {}
-        }
-      }
+      const merge = (arr)=>{ for(const t of arr||[]){ const key=String(t.id); if(!seen.has(key)){ seen.add(key); } } };
+      // Run Piped searches for all queries in parallel
+      const piped = await Promise.allSettled(queries.map(q=> this.searchYouTubePiped(q, limit*2)));
+      let collected = piped.filter(x=>x.status==='fulfilled').flatMap(x=>x.value||[]).filter(Boolean);
+      // Dedup and trim
+      const deduped = [];
+      const seen2 = new Set();
+      for (const t of collected) { const k=String(t.id); if (!seen2.has(k)) { seen2.add(k); deduped.push(t) } }
+      collected = deduped.slice(0, limit);
+      if (collected.length >= limit) return collected;
+      // Fill with base searches in parallel if still short
+      const base = await Promise.allSettled(queries.map(q=> super.searchMusic(q, 'youtube', limit*2)));
+      const fill = base.filter(x=>x.status==='fulfilled').flatMap(x=>x.value||[]);
+      for (const t of fill) { const key = String(t.id); if (!seen2.has(key)) { seen2.add(key); collected.push(t); if (collected.length >= limit) break; } }
       return collected.slice(0, limit);
+    };
+
+    const cached = readCache(60*60*1000);
+    if (cached && Object.values(cached).some(arr => (arr||[]).length>0)) {
+      // Refresh in background
+      setTimeout(async ()=>{ try { const tr = await tryQueries(sections.find(s=>s.key==='trending').queries); const keys = sections.filter(s=>s.key!=='trending'); const results = await Promise.all(keys.map(s=> tryQueries(s.queries))); const out2 = { trending: tr }; keys.forEach((s,i)=>{ out2[s.key] = (results[i]&&results[i].length)? results[i] : tr.slice(0, limit) }); writeCache(out2) } catch {} }, 0);
+      return cached;
     }
 
     const out = {};
-    // Build trending first so other sections can borrow as fallback
+    // Build trending quickly
     const trending = await tryQueries(sections.find(s=>s.key==='trending').queries);
     out.trending = trending;
-    for (const s of sections) {
-      if (s.key === 'trending') continue;
-      try {
-        const r = await tryQueries(s.queries);
-        out[s.key] = (r && r.length) ? r : trending.slice(0, limit);
-      } catch {
-        out[s.key] = trending.slice(0, limit);
-      }
-    }
+    // Build other sections in parallel
+    const rest = sections.filter(s=>s.key!=='trending');
+    const built = await Promise.allSettled(rest.map(s=> tryQueries(s.queries)));
+    rest.forEach((s, idx) => {
+      const val = built[idx];
+      const arr = (val.status==='fulfilled' ? (val.value||[]) : []);
+      out[s.key] = arr.length ? arr : trending.slice(0, limit);
+    });
 
     // If everything is empty, fall back to generic safe queries and finally cache
     const totalCount = Object.values(out).reduce((n, arr) => n + ((arr || []).length), 0);
