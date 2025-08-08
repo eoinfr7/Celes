@@ -226,6 +226,14 @@ class IPCHandlers {
     ipcMain.handle('close-mini-player', () => {
       try { this.windowManager.closeMiniPlayerWindow(); return { success: true }; } catch (e) { return { success: false, error: e.message } }
     });
+
+    // Bridge generic commands from mini → main renderer
+    ipcMain.handle('renderer-command', async (_event, cmd, args) => {
+      try {
+        this.mainWindow?.webContents?.send('renderer-command', { type: cmd, args });
+        return { success: true };
+      } catch (e) { return { success:false, error: e.message } }
+    });
   }
 
   setupMediaHandlers() {
