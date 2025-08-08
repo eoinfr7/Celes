@@ -711,9 +711,56 @@ export default function App() {
   const [showMiniLyric, setShowMiniLyric] = useState(()=>{ try { const v = localStorage.getItem('celes.showMiniLyric'); return v==null? true : v==='true' } catch { return true } })
   const [autoDownloadLiked, setAutoDownloadLiked] = useState(false)
   const [downloadDir, setDownloadDir] = useState('')
+  const [playlistDl, setPlaylistDl] = useState({}) // { [playlistId]: { total, done, currentPercent } }
+  const playlistDlRef = useRef(new Map()) // pid -> { keys:Set, total, done }
 
   useEffect(()=>{ (async()=>{ try { const s = await window.electronAPI.getSettings?.(); if(s){ if(s.autoDownloadLiked!=null) setAutoDownloadLiked(!!s.autoDownloadLiked); if(s.downloadDir) setDownloadDir(s.downloadDir) } } catch {} })() }, [])
   async function persistSettings(next){ try { await window.electronAPI.saveSettings?.(next) } catch {} }
+
+  function makeTrackKey(t){ return `${(t.platform||'youtube')}:${String(t.stream_id||t.id)}` }
+
+  async function queuePlaylistDownload(playlist, onlyMissing){
+    try {
+      const songs = Array.isArray(playlist?.songs) ? playlist.songs : []
+      let candidates = songs.filter(t => (t.type==='stream' || t.platform))
+      if (onlyMissing){
+        const existing = await window.electronAPI.getDownloads?.()
+        const bySongId = new Set((existing||[]).map(d=>d.song_id))
+        candidates = candidates.filter(t => !bySongId.has(t.id))
+      }
+      if (candidates.length===0) { alert('Nothing to download') ; return }
+      const settings = await window.electronAPI.getSettings?.()||{}
+      const target = settings.downloadDir || prompt('Download folder')
+      if (!target) return
+      const payload = candidates.map(t=>({ id: t.stream_id||t.id, stream_id: String(t.stream_id||t.id), platform: t.platform||'youtube', title: t.title, artist: t.artist, streamUrl: t.stream_url||t.streamUrl }))
+      await window.electronAPI.downloadQueueAdd?.(payload, target)
+      const keys = new Set(payload.map(makeTrackKey))
+      playlistDlRef.current.set(playlist.id, { keys, total: payload.length, done: 0 })
+      setPlaylistDl(prev=>({ ...prev, [playlist.id]: { total: payload.length, done: 0, currentPercent: null } }))
+    } catch {}
+  }
+
+  useEffect(()=>{
+    const handler = (data)=>{
+      try{
+        if (!data || !data.track) return
+        const key = makeTrackKey(data.track)
+        for (const [pid, state] of playlistDlRef.current.entries()){
+          if (!state?.keys?.has(key)) continue
+          if (data.state==='progress'){
+            const pct = data.total ? Math.round((data.written||0)/data.total*100) : null
+            setPlaylistDl(prev=>({ ...prev, [pid]: { ...(prev[pid]||{ total: state.total, done: state.done }), total: state.total, done: state.done, currentPercent: pct } }))
+          }
+          if (data.state==='done'){
+            state.done = Math.min(state.total, (state.done||0)+1)
+            setPlaylistDl(prev=>({ ...prev, [pid]: { total: state.total, done: state.done, currentPercent: 100 } }))
+            // if finished all, clear from ref later
+          }
+        }
+      }catch{}
+    }
+    window.electronAPI.onDownloadProgress?.(handler)
+  }, [])
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 flex">
@@ -893,16 +940,8 @@ export default function App() {
                       </div>
                       <div className="flex items-center gap-2">
                         <Button variant="ghost" onClick={() => setActivePlaylistId(p.id)}>Open</Button>
-                        <Button variant="ghost" onClick={async () => {
-                          try {
-                            const tracks = (p.songs||[]).filter(t => (t.type==='stream' || t.platform)).map(t => ({ id: t.stream_id||t.id, stream_id: String(t.stream_id||t.id), platform: t.platform||'youtube', title: t.title, artist: t.artist, streamUrl: t.stream_url||t.streamUrl }))
-                            if (!tracks.length) { alert('No streaming tracks to download'); return }
-                            const settings = await window.electronAPI.getSettings?.()||{}
-                            const targetDir = settings.downloadDir || prompt('Download folder')
-                            if (!targetDir) return
-                            await window.electronAPI.downloadQueueAdd?.(tracks, targetDir)
-                          } catch {}
-                        }}>Download</Button>
+                        <Button variant="ghost" onClick={async () => { queuePlaylistDownload(p, false) }}>Download</Button>
+                        <Button variant="ghost" onClick={async () => { queuePlaylistDownload(p, true) }}>Download Missing</Button>
                         {p.type !== 'system' && (
                           <>
                             <Button variant="ghost" onClick={() => { const n = prompt('Rename playlist', p.name); if (n && n.trim()) renamePlaylist(p.id, n.trim()) }}>Rename</Button>
@@ -924,6 +963,9 @@ export default function App() {
                             <Button variant="ghost" onClick={() => doPlay({ ...t, platform: t.platform || t.type === 'stream' ? t.platform : 'internetarchive' })}>Play</Button>
                           </div>
                         ))}
+                        {playlistDl[p.id] && (
+                          <div className="text-[11px] text-neutral-400">Downloading: {playlistDl[p.id].done}/{playlistDl[p.id].total}{playlistDl[p.id].currentPercent!=null? ` • ${playlistDl[p.id].currentPercent}%`:''}</div>
+                        )}
                       </div>
                     )}
                   </div>
