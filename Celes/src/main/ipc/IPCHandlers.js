@@ -35,6 +35,17 @@ class IPCHandlers {
     setInterval(forwardNowPlaying, 2000);
   }
 
+  setupSettingsHandlers() {
+    const settingsManager = this.trayService?.settingsManager || this.settingsManager || null;
+    const sm = settingsManager || { loadSettings: ()=> ({}), saveSettings: ()=> false };
+    ipcMain.handle('get-settings', async () => {
+      try { return sm.loadSettings(); } catch { return {} }
+    });
+    ipcMain.handle('save-settings', async (event, settings) => {
+      try { sm.saveSettings(settings||{}); return { success:true } } catch (e) { return { success:false, error:e.message } }
+    });
+  }
+
   setupDatabaseHandlers() {
     ipcMain.handle('get-all-songs', async () => {
       return this.database.getAllSongs();

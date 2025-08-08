@@ -664,6 +664,16 @@ export default function App() {
               </div>
             ))}
           </div>
+          <div className="h-px bg-neutral-800 my-2" />
+          <div className="text-sm font-semibold">Downloads</div>
+          <div className="flex items-center justify-between"><div>Auto-download liked songs</div><input type="checkbox" checked={autoDownloadLiked} onChange={async (e)=>{ const v=e.target.checked; setAutoDownloadLiked(v); await persistSettings({ ...(await window.electronAPI.getSettings?.()||{}), autoDownloadLiked: v, downloadDir }) }} /></div>
+          <div>
+            <div className="mb-1">Download folder</div>
+            <div className="flex gap-2">
+              <input className="flex-1 bg-neutral-950 border border-neutral-800 rounded px-2 py-1" value={downloadDir} onChange={(e)=>setDownloadDir(e.target.value)} />
+              <Button variant="ghost" onClick={async ()=>{ const dir = prompt('Set download folder', downloadDir || '/Users/'+(navigator.userAgent.includes('Mac')?'eoinfr':'')+'/Music/Celes'); if(dir){ setDownloadDir(dir); await persistSettings({ ...(await window.electronAPI.getSettings?.()||{}), autoDownloadLiked, downloadDir: dir }) } }}>Choose</Button>
+            </div>
+          </div>
         </div>
       </div>
     )
@@ -680,6 +690,11 @@ export default function App() {
   const [lyricsEnabled, setLyricsEnabled] = useState(()=>{ try { const v = localStorage.getItem('celes.lyricsEnabled'); return v==null? true : v==='true' } catch { return true } })
   const [autoOpenLyrics, setAutoOpenLyrics] = useState(()=>{ try { const v = localStorage.getItem('celes.autoOpenLyrics'); return v==='true' } catch { return false } })
   const [showMiniLyric, setShowMiniLyric] = useState(()=>{ try { const v = localStorage.getItem('celes.showMiniLyric'); return v==null? true : v==='true' } catch { return true } })
+  const [autoDownloadLiked, setAutoDownloadLiked] = useState(false)
+  const [downloadDir, setDownloadDir] = useState('')
+
+  useEffect(()=>{ (async()=>{ try { const s = await window.electronAPI.getSettings?.(); if(s){ if(s.autoDownloadLiked!=null) setAutoDownloadLiked(!!s.autoDownloadLiked); if(s.downloadDir) setDownloadDir(s.downloadDir) } } catch {} })() }, [])
+  async function persistSettings(next){ try { await window.electronAPI.saveSettings?.(next) } catch {} }
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 flex">

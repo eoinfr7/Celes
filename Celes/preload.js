@@ -113,6 +113,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   clearStreamingCache: () => ipcRenderer.invoke('clear-streaming-cache'),
   streamingHealthCheck: () => ipcRenderer.invoke('streaming-health-check'),
   getStreamingStats: () => ipcRenderer.invoke('get-streaming-stats'),
+  // Settings
+  getSettings: () => ipcRenderer.invoke('get-settings'),
+  saveSettings: (settings) => ipcRenderer.invoke('save-settings', settings),
   
   // Fallback settings
   setFallbackEnabled: (enabled) => ipcRenderer.invoke('set-fallback-enabled', enabled),

@@ -147,6 +147,7 @@ class MusicPlayerApp {
       
       this.folderWatcher.initialize();
       this.ipcHandlers.setupHandlers();
+      this.ipcHandlers.setupSettingsHandlers?.();
       this.setupWindowEvents();
 
       // Register proxy protocol so the renderer can stream without CORS
