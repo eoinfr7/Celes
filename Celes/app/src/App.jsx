@@ -596,10 +596,20 @@ export default function App() {
                 <div className="h-40 rounded bg-neutral-900 border border-neutral-800 overflow-hidden flex items-end p-4" style={{backgroundImage:`url(${artistView.data?.headerImage||''})`, backgroundSize:'cover', backgroundPosition:'center'}}>
                   <div className="text-3xl font-extrabold drop-shadow-md">{artistView.name}</div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
                   <Button onClick={()=>{ const top=artistView.data?.topTracks?.[0]; if(top) doPlay(top)}}>Play</Button>
                   <Button variant="ghost" onClick={async ()=>{ await window.electronAPI.followArtistStreaming?.(artistView.name); alert('Following'); }}>Follow</Button>
+                  {artistView.data?.monthlyListeners && (
+                    <div className="text-xs text-neutral-400">~{artistView.data.monthlyListeners.toLocaleString()} listeners</div>
+                  )}
                 </div>
+                {artistView.data?.about?.extract && (
+                  <div className="bg-neutral-900 border border-neutral-800 rounded p-3">
+                    <div className="text-sm font-semibold mb-1">About</div>
+                    <div className="text-xs text-neutral-300 leading-relaxed">{artistView.data.about.extract}</div>
+                    <div className="text-[11px] text-neutral-500 mt-1">Source: {artistView.data.about.source}</div>
+                  </div>
+                )}
                 <SectionCard title="Popular" items={artistView.data?.topTracks||[]} />
                 <div className="bg-neutral-900 border border-neutral-800 rounded p-3">
                   <div className="text-sm font-semibold mb-2">Fans also like</div>

@@ -465,17 +465,66 @@ class StreamingService extends BaseStreamingService {
     }
   }
 
+  async getWikipediaSummary(artistName) {
+    try {
+      const searchUrl = `https://en.wikipedia.org/w/rest.php/v1/search/title?q=${encodeURIComponent(artistName)}&limit=1`;
+      const search = await this.doJsonGet(searchUrl, 12000).catch(() => null);
+      const page = (search && search.pages && search.pages[0]) || null;
+      const title = page?.title || artistName;
+      const sumUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`;
+      const summary = await this.doJsonGet(sumUrl, 12000).catch(() => null);
+      if (!summary) return null;
+      return {
+        title: summary.title || title,
+        extract: summary.extract || '',
+        thumbnail: (summary.thumbnail && summary.thumbnail.source) || '',
+        source: 'wikipedia'
+      };
+    } catch { return null; }
+  }
+
+  async getYouTubeSubscribersEstimate(artistName) {
+    try {
+      const instances = [
+        'https://pipedapi.kavin.rocks',
+        'https://piped.video',
+        'https://piped.projectsegfau.lt',
+      ];
+      for (const base of instances) {
+        try {
+          const json = await this.doJsonGet(`${base}/search?q=${encodeURIComponent(artistName)}`, 12000);
+          const items = Array.isArray(json) ? json : (json && json.items) || [];
+          const channels = items.filter(it => it.type === 'channel' || it?.uploaderUrl);
+          if (!channels.length) continue;
+          const ch = channels[0];
+          const subStr = ch?.subscribers || ch?.subscriberCount || '';
+          if (!subStr) continue;
+          // Parse like "1.2M subscribers"
+          const num = String(subStr).toLowerCase().replace(/[^0-9\.km]/g,'');
+          const toNum = (s)=> s.endsWith('m')? Math.round(parseFloat(s)*1_000_000): s.endsWith('k')? Math.round(parseFloat(s)*1_000): Math.round(parseFloat(s));
+          const parsed = toNum(num);
+          if (Number.isFinite(parsed)) return parsed;
+        } catch { /* try next */ }
+      }
+      return null;
+    } catch { return null; }
+  }
+
   async getArtistOverview(artistName, limits = { top: 10, similar: 12 }) {
     try {
-      const [topTracks, similarArtists] = await Promise.all([
+      const [topTracks, similarArtists, wiki, ytSubs] = await Promise.all([
         this.getArtistTopTracks(artistName, limits.top || 10),
-        this.getSimilarArtists(artistName, limits.similar || 12)
+        this.getSimilarArtists(artistName, limits.similar || 12),
+        this.getWikipediaSummary(artistName),
+        this.getYouTubeSubscribersEstimate(artistName)
       ]);
-      const headerImage = (topTracks[0] && (topTracks[0].thumbnail || '')) || '';
-      return { artist: artistName, headerImage, topTracks, similarArtists, about: null };
+      const headerImage = (topTracks[0] && (topTracks[0].thumbnail || '')) || (wiki?.thumbnail || '');
+      const about = wiki || null;
+      const monthlyListeners = ytSubs || null; // approximate via YT subscribers if available
+      return { artist: artistName, headerImage, topTracks, similarArtists, about, monthlyListeners };
     } catch (e) {
       console.error('Error getting artist overview:', e);
-      return { artist: artistName, headerImage: '', topTracks: [], similarArtists: [], about: null };
+      return { artist: artistName, headerImage: '', topTracks: [], similarArtists: [], about: null, monthlyListeners: null };
     }
   }
 }
