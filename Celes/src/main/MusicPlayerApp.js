@@ -142,7 +142,8 @@ class MusicPlayerApp {
         this.trayService,
         this.overlayService,
         this.updateService,
-        this.streamingService
+        this.streamingService,
+        this.windowManager
       );
       
       this.folderWatcher.initialize();
@@ -247,6 +248,8 @@ class MusicPlayerApp {
           forwarded.referer = forwarded.referer || 'https://www.youtube.com/';
           forwarded.origin = forwarded.origin || 'https://www.youtube.com';
         }
+        // Make sure CORS doesn't block media element usage
+        forwarded['access-control-request-private-network'] = 'true';
         // Ensure Range passthrough for snappy seeks; strip sec-fetch Site headers that can cause 403s
         delete forwarded['sec-fetch-site']; delete forwarded['sec-fetch-mode']; delete forwarded['sec-fetch-dest'];
         const init = { method: request.method, headers: forwarded, redirect: 'follow' };

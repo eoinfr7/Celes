@@ -168,6 +168,48 @@ class StreamingService extends BaseStreamingService {
     return null;
   }
 
+  async getYouTubeVideoStreamUrlViaPiped(videoId) {
+    const instances = [
+      'https://pipedapi.kavin.rocks',
+      'https://piped.video',
+      'https://piped.projectsegfau.lt',
+    ];
+    for (const base of instances) {
+      try {
+        const url = `${base}/streams/${encodeURIComponent(videoId)}`;
+        const json = await this.doJsonGet(url, 12000);
+        const videos = (json && (json.videoStreams || json.video)) || [];
+        if (!Array.isArray(videos) || videos.length === 0) continue;
+        // Prefer MP4/H264 progressive; otherwise pick the highest bitrate
+        const codecScore = (s) => /mp4|h264|avc1/i.test(s || '') ? 3 : (/webm|vp9|av01/i.test(s || '') ? 2 : 1);
+        const sorted = [...videos].sort((a, b) => {
+          const ac = codecScore(a.codec || a.mimeType);
+          const bc = codecScore(b.codec || b.mimeType);
+          if (ac !== bc) return bc - ac;
+          return (Number(b.bitrate) || Number(b.quality) || 0) - (Number(a.bitrate) || Number(a.quality) || 0);
+        });
+        const best = sorted[0];
+        if (best && (best.url || best.link)) {
+          const link = best.url || best.link;
+          return link.startsWith('http') ? link : `${base}${link}`;
+        }
+      } catch {
+        // try next instance
+      }
+    }
+    return null;
+  }
+
+  async getYouTubeVideoStream(videoId) {
+    try {
+      const vid = String(videoId || '').slice(0, 11);
+      if (!/^[a-zA-Z0-9_-]{11}$/.test(vid)) return null;
+      const viaPiped = await this.getYouTubeVideoStreamUrlViaPiped(vid);
+      if (viaPiped) return { streamUrl: viaPiped };
+      return null;
+    } catch { return null }
+  }
+
   async searchMusic(query, platform = 'youtube', limit = 20) {
     // Internet Archive handled here
     if (platform === 'internetarchive') {

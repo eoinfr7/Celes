@@ -1,7 +1,7 @@
 const { ipcMain, dialog, Notification, app } = require('electron');
 
 class IPCHandlers {
-  constructor(database, folderWatcher, mainWindow, trayService, overlayService, updateService, streamingService) {
+  constructor(database, folderWatcher, mainWindow, trayService, overlayService, updateService, streamingService, windowManager) {
     this.database = database;
     this.folderWatcher = folderWatcher;
     this.mainWindow = mainWindow;
@@ -9,6 +9,7 @@ class IPCHandlers {
     this.overlayService = overlayService;
     this.updateService = updateService;
     this.streamingService = streamingService;
+    this.windowManager = windowManager;
     // Downloads queue
     this.downloadQueue = [];
     this.downloadPaused = false;
@@ -494,6 +495,16 @@ class IPCHandlers {
         return await this.streamingService.getLyricsForTrack(meta);
       } catch (error) {
         console.error('Error getting lyrics:', error);
+        return null;
+      }
+    });
+
+    // YouTube video stream (ad-free via Piped) for Theater mode
+    ipcMain.handle('get-youtube-video-stream', async (event, videoId) => {
+      try {
+        return await this.streamingService.getYouTubeVideoStream(videoId);
+      } catch (error) {
+        console.error('Error getting YouTube video stream:', error);
         return null;
       }
     });

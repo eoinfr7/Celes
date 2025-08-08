@@ -96,6 +96,8 @@ export default function App() {
   const [playlistDl, setPlaylistDl] = useState({})
   const playlistDlRef = useRef(new Map())
   const [theaterOn, setTheaterOn] = useState(false)
+  const [videoOn, setVideoOn] = useState(false)
+  const videoRef = useRef(null)
 
   // WebAudio EQ
   const audioCtxRef = useRef(null)
@@ -1122,12 +1124,32 @@ export default function App() {
       )}
       {theaterOn && (
         <div className="fixed inset-0 z-50 bg-black">
-          <canvas id="vis" className="absolute inset-0 opacity-40" />
+          {!videoOn && <canvas id="vis" className="absolute inset-0 opacity-40" />}
+          {videoOn && (
+            <video ref={videoRef} className="absolute inset-0 w-full h-full object-contain bg-black" controls={false} muted playsInline />
+          )}
           <div className="relative h-full w-full flex flex-col items-center justify-center gap-6" onClick={(e)=>e.stopPropagation()}>
             <div className="absolute top-4 right-4 flex gap-2">
               <Button variant="ghost" onClick={()=>setTheaterOn(false)}>Exit</Button>
+              <Button variant="ghost" onClick={async ()=>{
+                try {
+                  if (!currentTrack || (currentTrack.platform!=='youtube' && !(String(currentTrack.id||'').length===11))) { alert('Video only for YouTube tracks'); return }
+                  if (!videoOn) {
+                    const vid = String(currentTrack.id||'').slice(0,11)
+                    const res = await window.electronAPI.getYouTubeVideoStream?.(vid)
+                    const url = res?.streamUrl
+                    if (!url) { alert('No video stream available'); return }
+                    const el = videoRef.current
+                    if (el) { el.src = `celes-stream://proxy?u=${encodeURIComponent(url)}`; await el.play().catch(()=>{}) }
+                    setVideoOn(true)
+                  } else {
+                    const el = videoRef.current; if (el) { try { el.pause() } catch {}; el.src=''; }
+                    setVideoOn(false)
+                  }
+                } catch {}
+              }}>{videoOn? 'Hide Video' : 'Show Video'}</Button>
             </div>
-            <img src={currentTrack?.thumbnail || 'https://via.placeholder.com/512'} className="w-[36vmin] h-[36vmin] rounded shadow-lg object-cover" alt="art" />
+            {!videoOn && <img src={currentTrack?.thumbnail || 'https://via.placeholder.com/512'} className="w-[36vmin] h-[36vmin] rounded shadow-lg object-cover" alt="art" />}
             <div className="text-3xl font-bold text-white max-w-[80vw] text-center truncate">{currentTrack?.title||'Nothing playing'}</div>
             <div className="text-lg text-neutral-300 truncate max-w-[70vw]">{currentTrack?.artist||''}</div>
             <div className="flex items-center gap-6">
