@@ -99,6 +99,7 @@ export default function App() {
   const [videoOn, setVideoOn] = useState(false)
   const videoRef = useRef(null)
   const [videoUrl, setVideoUrl] = useState(null)
+  const [miniDockOn, setMiniDockOn] = useState(false)
 
   function deriveYouTubeId(track){
     try {
@@ -580,43 +581,24 @@ export default function App() {
             <img alt={t.title} src={t.thumbnail || 'https://via.placeholder.com/300x200/4a9eff/ffffff?text=♫'} className="w-full h-36 object-cover rounded" />
             <div className="text-sm font-medium line-clamp-2">{t.title}</div>
             <div className="text-xs text-neutral-400"><button className="underline" onClick={()=>loadArtist(t.artist)}>{t.artist}</button> • {t.platform}</div>
-            <div className="flex gap-2">
-              <Button className="mt-1 flex-1" onClick={() => doPlay(t)}>Play</Button>
-              <Button className="mt-1" variant="ghost" onClick={() => addToQueue(t)}>+ Queue</Button>
-              <Button className="mt-1" variant="ghost" onClick={async ()=>{
-                try {
-                  const dirHandle = await window.showDirectoryPicker?.().catch(()=>null)
-                  let targetDir = null
-                  if (dirHandle && dirHandle.name) { targetDir = dirHandle.name } // fallback; Electron can't use FileSystemHandle directly
-                  if (!targetDir) { targetDir = prompt('Save to folder (absolute path):', '/Users/'+(navigator.userAgent.includes('Mac')?'eoinfr':'')+'/Music/Celes') }
-                  if (!targetDir) return
-                  const res = await window.electronAPI.downloadTrack?.({ id:t.id, stream_id:String(t.id), platform:t.platform, title:t.title, artist:t.artist, streamUrl:t.streamUrl }, targetDir)
-                  if (res && !res.error) alert('Saved: '+res.path)
-                } catch {}
-              }}>Download</Button>
-              <Button className="mt-1" variant="ghost" onClick={async () => {
-                let pid = activePlaylistId
-                if (!pid || !playlists.find(p=>p.id===pid)) {
-                  const names = playlists.map((p, i) => `${i+1}. ${p.name}`)
-                  const choice = prompt(`Add to which playlist?\n${names.join('\n')}\nOr type a new name:`)
-                  if (!choice) return
-                  const idx = Number(choice)-1
-                  if (Number.isInteger(idx) && idx >= 0 && idx < playlists.length) pid = playlists[idx].id
-                  else { const created = await createPlaylist(choice.trim()); pid = playlists[playlists.length-1]?.id }
-                }
-                await addTrackToDbPlaylist(pid, t)
-              }}>+ Playlist</Button>
-              <Button className="mt-1" variant="ghost" onClick={async () => {
-                const id = await persistTrack(t)
-                if (id) await window.electronAPI.toggleLikeSong?.(id)
-              }}>♥</Button>
-              <Button className="mt-1" variant="ghost" onClick={async ()=>{ try { await window.electronAPI.followArtistStreaming?.(t.artist); alert(`Following ${t.artist}`)} catch{} }}>Follow</Button>
-              <Button className="mt-1" variant="ghost" onClick={async ()=>{ try { await window.electronAPI.unfollowArtistStreaming?.(t.artist); alert(`Unfollowed ${t.artist}`)} catch{} }}>Unfollow</Button>
-              <Button className="mt-1" variant="ghost" onClick={async ()=>{
-                // Simple radio: fetch similar and queue them
-                const sim = await window.electronAPI.getSimilarTracks?.(t.id, t.platform||'youtube', 20)
-                if (Array.isArray(sim)) sim.forEach(addToQueue)
-              }}>Radio</Button>
+            <div className="flex items-center justify-between mt-1">
+              <Button className="flex-1" onClick={() => doPlay(t)}>Play</Button>
+              <span className="flex items-center gap-2 ml-2">
+                <button className="p-1 hover:text-primary" title="Add to queue" onClick={() => addToQueue(t)}><ListPlus size={16}/></button>
+                <button className="p-1 hover:text-primary" title="Like" onClick={async () => { const id = await persistTrack(t); if (id) await window.electronAPI.toggleLikeSong?.(id) }}><Heart size={16}/></button>
+                <button className="p-1 hover:text-primary" title="Add to playlist" onClick={async () => {
+                  let pid = activePlaylistId
+                  if (!pid || !playlists.find(p=>p.id===pid)) {
+                    const names = playlists.map((p, i) => `${i+1}. ${p.name}`)
+                    const choice = prompt(`Add to which playlist?\n${names.join('\n')}\nOr type a new name:`)
+                    if (!choice) return
+                    const idx = Number(choice)-1
+                    if (Number.isInteger(idx) && idx >= 0 && idx < playlists.length) pid = playlists[idx].id
+                    else { await createPlaylist(choice.trim()); pid = playlists[playlists.length-1]?.id }
+                  }
+                  await addTrackToDbPlaylist(pid, t)
+                }}><Plus size={16}/></button>
+              </span>
             </div>
           </div>
         ))}
@@ -887,6 +869,7 @@ export default function App() {
           </div>
           <Button variant="ghost" onClick={()=>setThemeOpen(v=>!v)}>Theme</Button>
           <Button variant="ghost" onClick={()=>setSettingsOpen(v=>!v)}>Settings</Button>
+          <Button variant="ghost" onClick={()=>setMiniDockOn(v=>!v)}>{miniDockOn? 'Hide Dock':'Dock'}</Button>
           <Button variant="ghost" onClick={async()=>{ const res = await window.electronAPI.openMiniPlayer?.(); if(!res?.success){ alert('Mini failed to open') } }}>Mini</Button>
           <div className="md:hidden flex-1" />
         </header>
@@ -913,7 +896,7 @@ export default function App() {
                   <img alt={t.title} src={t.thumbnail || 'https://via.placeholder.com/300x200/4a9eff/ffffff?text=♫'} className="w-full h-36 object-cover rounded" />
                   <div className="text-sm font-medium line-clamp-2">{t.title}</div>
                       <div className="text-xs text-neutral-400 flex items-center justify-between">
-                        <span>{t.artist} • {t.platform}</span>
+                        <span><button className="underline" onClick={()=>loadArtist(t.artist)}>{t.artist}</button> • {t.platform}</span>
                         <span className="flex items-center gap-2">
                           <button className="p-1 hover:text-primary" title="Add to queue" onClick={() => addToQueue(t)}><ListPlus size={16}/></button>
                           <button className="p-1 hover:text-primary" title="Like" onClick={async () => { const id = await persistTrack(t); if (id) await window.electronAPI.toggleLikeSong?.(id) }}><Heart size={16}/></button>
@@ -1097,6 +1080,27 @@ export default function App() {
       {paletteOpen && <CommandPalette />}
       {themeOpen && <ThemePanel />}
       {settingsOpen && <SettingsPanel />}
+      {miniDockOn && (
+        <div className="fixed bottom-24 right-4 z-40 bg-neutral-900/95 border border-neutral-800 rounded shadow-xl p-3 w-[320px]">
+          <div className="text-sm font-semibold mb-2">Mini Dock</div>
+          <div className="flex items-center gap-3">
+            <img src={currentTrack?.thumbnail || 'https://via.placeholder.com/48'} className="w-12 h-12 rounded object-cover"/>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm truncate">{currentTrack?.title || 'Nothing playing'}</div>
+              <div className="text-xs text-neutral-400 truncate">{currentTrack?.artist || ''}</div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button className="p-2 rounded hover:bg-neutral-800" onClick={()=>nextFromQueue()}><SkipBack size={16}/></button>
+              <button className="p-2 rounded bg-primary text-primary-foreground hover:bg-primary/90" onClick={togglePlayPause}>{isPlaying? <Pause size={16}/> : <Play size={16}/>}</button>
+              <button className="p-2 rounded hover:bg-neutral-800" onClick={()=>nextFromQueue()}><SkipForward size={16}/></button>
+            </div>
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <input type="range" min={0} max={1} step={0.01} value={volume} onChange={(e)=>setVolume(Number(e.target.value))} className="flex-1 accent-primary" />
+            <button className="text-xs text-neutral-400" onClick={()=>setMiniDockOn(false)}>Close</button>
+          </div>
+        </div>
+      )}
       <div className="fixed bottom-0 left-0 right-0 border-t border-neutral-800 bg-neutral-950/90 backdrop-blur supports-[backdrop-filter]:bg-neutral-950/60">
         <div className="mx-auto max-w-screen-2xl px-4 h-20 flex items-center gap-4">
           <div className="flex items-center gap-3 min-w-0">
