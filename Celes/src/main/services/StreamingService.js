@@ -170,9 +170,9 @@ class StreamingService extends BaseStreamingService {
 
   async getYouTubeVideoStreamUrlViaPiped(videoId) {
     const instances = [
+      'https://piped.projectsegfau.lt',
       'https://pipedapi.kavin.rocks',
       'https://piped.video',
-      'https://piped.projectsegfau.lt',
     ];
     for (const base of instances) {
       try {

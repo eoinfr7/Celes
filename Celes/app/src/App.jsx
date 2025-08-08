@@ -1185,7 +1185,7 @@ export default function App() {
                 dockVideoUrl && !dockVideoFailed ? (
                   <video ref={dockVideoRef} src={dockVideoUrl||''} className="w-full h-full object-contain bg-black" muted playsInline autoPlay crossOrigin="anonymous" onError={()=>setDockVideoFailed(true)} onCanPlay={()=>{ try { dockVideoRef.current?.play?.() } catch {} }} />
                 ) : (
-                  dockVideoId ? <iframe title="dock-video" src={`https://piped.video/embed/${dockVideoId}?autoplay=1&muted=1&controls=0`} className="w-full h-full" allow="autoplay; encrypted-media; picture-in-picture" referrerPolicy="no-referrer" /> : <canvas id="dock-vis" className="w-full h-full" />
+                  <div className="w-full h-full flex items-center justify-center text-xs text-neutral-400">Video unavailable</div>
                 )
               ) : (
                 <canvas id="dock-vis" className="w-full h-full" />
