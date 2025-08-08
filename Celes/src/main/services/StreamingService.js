@@ -498,6 +498,44 @@ class StreamingService extends BaseStreamingService {
     } catch { return null; }
   }
 
+  async getSpotifyBioUnofficial(artistName) {
+    try {
+      // Use DuckDuckGo to find the Spotify artist URL
+      const ddg = await this.fetchText(`https://duckduckgo.com/html/?q=${encodeURIComponent(artistName + ' spotify artist')}`, 12000).catch(()=>null);
+      let url = null;
+      if (ddg) {
+        const m = ddg.match(/https?:\/\/open\.spotify\.com\/artist\/([a-zA-Z0-9]+)/);
+        if (m) url = `https://open.spotify.com/artist/${m[1]}`;
+      }
+      if (!url) return null;
+      const html = await this.fetchText(url, 12000).catch(()=>null);
+      if (!html) return null;
+      // Spotify artist pages embed JSON in a script tag window.__sc_hydration or application/ld+json sometimes contains description
+      const hydra = html.match(/__sc_hydration\s*=\s*(\[\{[\s\S]*?\}\]);/);
+      if (hydra && hydra[1]) {
+        try {
+          const arr = JSON.parse(hydra[1]);
+          const jsons = [];
+          const drill = (o)=>{ if(!o||typeof o!=='object') return; for(const k of Object.keys(o)){ const v=o[k]; if(k==='data'&&v&&typeof v==='object') jsons.push(v); drill(v);} };
+          arr.forEach(x=>drill(x));
+          let desc = null;
+          for (const j of jsons){ if (j && typeof j.description === 'string' && j.description.length > 40){ desc = j.description; break; } }
+          if (desc) return { source: 'spotify', extract: desc };
+        } catch { /* ignore */ }
+      }
+      // fallback: try ld+json
+      const ld = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
+      if (ld && ld[1]) {
+        try {
+          const obj = JSON.parse(ld[1]);
+          const desc = obj?.description || null;
+          if (desc) return { source: 'spotify', extract: desc };
+        } catch {}
+      }
+      return null;
+    } catch { return null; }
+  }
+
   async getYouTubeSubscribersEstimate(artistName) {
     try {
       const instances = [
@@ -558,15 +596,16 @@ class StreamingService extends BaseStreamingService {
 
   async getArtistOverview(artistName, limits = { top: 10, similar: 12 }) {
     try {
-      const [topTracks, similarArtists, wiki, ytSubs, scFollows] = await Promise.all([
+      const [topTracks, similarArtists, wiki, ytSubs, scFollows, spotBio] = await Promise.all([
         this.getArtistTopTracks(artistName, limits.top || 10),
         this.getSimilarArtists(artistName, limits.similar || 12),
         this.getWikipediaSummary(artistName),
         this.getYouTubeSubscribersEstimate(artistName),
-        this.getSoundCloudFollowers(artistName)
+        this.getSoundCloudFollowers(artistName),
+        this.getSpotifyBioUnofficial(artistName)
       ]);
       const headerImage = (topTracks[0] && (topTracks[0].thumbnail || '')) || (wiki?.thumbnail || '');
-      const about = wiki || null;
+      const about = spotBio || wiki || null;
       const followers = (ytSubs || 0) + (scFollows || 0) || null;
       const followersBreakdown = { youtube: ytSubs || null, soundcloud: scFollows || null };
       return { artist: artistName, headerImage, topTracks, similarArtists, about, followers, followersBreakdown };
