@@ -61,6 +61,93 @@ export default function App() {
     try { const v = Number(localStorage.getItem('celes.volume')); return Number.isFinite(v)? Math.max(0, Math.min(1, v)) : 0.8 } catch { return 0.8 }
   })
   const audioRef = useRef(null)
+  const nextAudioRef = useRef(null)
+  const [crossfadeOn, setCrossfadeOn] = useState(true)
+  const [crossfadeMs, setCrossfadeMs] = useState(4000)
+
+  // WebAudio EQ
+  const audioCtxRef = useRef(null)
+  const sourceRef = useRef(null)
+  const filtersRef = useRef([])
+  const [eqOn, setEqOn] = useState(false)
+  const [eqGains, setEqGains] = useState([0,0,0,0,0,0,0,0,0,0])
+  const EQ_BANDS = [60, 120, 250, 500, 1000, 2000, 4000, 8000, 12000, 16000]
+  const EQ_PRESETS = {
+    Flat: [0,0,0,0,0,0,0,0,0,0],
+    Rock: [5,3,2,0,-1,1,2,3,4,5],
+    Jazz: [3,2,1,0,1,2,3,2,1,0],
+    Classical: [2,1,0,1,2,3,2,1,0,-1],
+    BassBoost: [6,5,4,2,0,-1,-2,-3,-4,-5]
+  }
+
+  function ensureAudioGraph(){
+    const el = audioRef.current
+    if (!el) return
+    if (!audioCtxRef.current){
+      const ctx = new (window.AudioContext||window.webkitAudioContext)()
+      const src = ctx.createMediaElementSource(el)
+      const filters = EQ_BANDS.map((freq)=>{ const f=ctx.createBiquadFilter(); f.type='peaking'; f.frequency.value=freq; f.Q.value=1.1; f.gain.value=0; return f })
+      src.connect(filters[0])
+      for (let i=0;i<filters.length-1;i++) filters[i].connect(filters[i+1])
+      filters[filters.length-1].connect(ctx.destination)
+      audioCtxRef.current = ctx
+      sourceRef.current = src
+      filtersRef.current = filters
+    }
+  }
+
+  function applyEqGains(gains){
+    filtersRef.current.forEach((f,i)=>{ try{ f.gain.value = gains[i]||0 }catch{}})
+  }
+
+  function setEqPreset(name){
+    const g = EQ_PRESETS[name] || EQ_PRESETS.Flat
+    setEqGains(g)
+    applyEqGains(g)
+  }
+
+  async function crossfadeTo(srcUrl){
+    const a = audioRef.current
+    const b = nextAudioRef.current
+    if (!a || !b || !srcUrl){ return }
+    if (!crossfadeOn || a.paused){
+      a.src = srcUrl
+      await a.play().catch(()=>{})
+      setIsPlaying(!a.paused)
+      return
+    }
+    b.volume = 0
+    b.src = srcUrl
+    try { await b.play() } catch {}
+    const steps = Math.max(10, Math.floor(crossfadeMs/40))
+    const step = crossfadeMs/steps
+    let i=0
+    const timer = setInterval(()=>{
+      i++
+      const t = i/steps
+      a.volume = Math.max(0, 1-t)
+      b.volume = Math.min(1, t)
+      if (i>=steps){
+        clearInterval(timer)
+        a.pause(); a.src=''; a.volume=1
+        // swap refs: make b the main player by swapping elements
+        const tmp = audioRef.current
+        audioRef.current = nextAudioRef.current
+        nextAudioRef.current = tmp
+        setIsPlaying(true)
+      }
+    }, step)
+  }
+
+  async function prefetchForQueue(){
+    const next = queue[0]
+    if (!next) return
+    try {
+      const toProxy = (u) => `celes-stream://proxy?u=${encodeURIComponent(u)}`
+      const res = await window.electronAPI.getStreamUrlWithFallback(next.id, next.platform||'youtube')
+      if (res?.streamUrl) { next._prefetched = toProxy(res.streamUrl) }
+    } catch {}
+  }
 
   async function reloadPlaylists() {
     const res = await window.electronAPI.getPlaylists?.()
@@ -102,8 +189,8 @@ export default function App() {
   }
 
   async function doPlay(track) {
-    const audio = audioRef.current
-    if (!audio) return
+    const a = audioRef.current
+    if (!a) return
     const toProxy = (u) => `celes-stream://proxy?u=${encodeURIComponent(u)}`
     let src = track?.streamUrl ? toProxy(track.streamUrl) : null
     if (!src) {
@@ -112,14 +199,10 @@ export default function App() {
       if (result?.streamUrl) src = toProxy(result.streamUrl)
     }
     if (!src) return
-    try {
-      setCurrentTrack(track)
-      audio.src = src
-      await audio.play()
-      setIsPlaying(true)
-    } catch {
-      setIsPlaying(false)
-    }
+    ensureAudioGraph(); if (eqOn) applyEqGains(eqGains)
+    await crossfadeTo(src)
+    setCurrentTrack(track)
+    prefetchForQueue()
   }
 
   function addToQueue(track) { setQueue((q) => [...q, track]) }
@@ -368,6 +451,38 @@ export default function App() {
 
   const [paletteOpen, setPaletteOpen] = useState(false)
 
+  function SettingsPanel(){
+    return (
+      <div className="fixed right-4 top-16 z-50 bg-neutral-900 border border-neutral-800 rounded p-3 w-96 shadow-xl">
+        <div className="text-sm font-semibold mb-2">Settings</div>
+        <div className="space-y-3 text-xs">
+          <div className="flex items-center justify-between"><div>Crossfade</div><input type="checkbox" checked={crossfadeOn} onChange={(e)=>setCrossfadeOn(e.target.checked)} /></div>
+          <div>
+            <div className="mb-1">Crossfade Duration (ms)</div>
+            <input type="number" className="w-full bg-neutral-950 border border-neutral-800 rounded px-2 py-1" value={crossfadeMs} onChange={(e)=>setCrossfadeMs(Number(e.target.value)||0)} />
+          </div>
+          <div className="flex items-center justify-between"><div>Equalizer</div><input type="checkbox" checked={eqOn} onChange={(e)=>{ setEqOn(e.target.checked); if(e.target.checked) ensureAudioGraph(); }} /></div>
+          <div className="flex gap-2 items-center">
+            <div>Preset:</div>
+            <select className="bg-neutral-950 border border-neutral-800 rounded px-2 py-1" onChange={(e)=>setEqPreset(e.target.value)}>
+              {Object.keys(EQ_PRESETS).map(p=> <option key={p} value={p}>{p}</option>)}
+            </select>
+          </div>
+          <div className="grid grid-cols-5 gap-2">
+            {EQ_BANDS.map((f,i)=> (
+              <div key={f} className="flex flex-col items-center">
+                <div className="text-[10px] mb-1">{f/1000>=1?`${f/1000}k`:`${f}`}</div>
+                <input type="range" min={-12} max={12} step={1} value={eqGains[i]||0} onChange={(e)=>{ const g=[...eqGains]; g[i]=Number(e.target.value); setEqGains(g); applyEqGains(g) }} className="h-20 rotate-[-90deg] origin-left w-20" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const [settingsOpen, setSettingsOpen] = useState(false)
+
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 flex">
       <Sidebar onSelect={setView} />
@@ -378,6 +493,7 @@ export default function App() {
             <Button onClick={doSearch} disabled={loading}>{loading ? 'Searching…' : 'Search'}</Button>
           </div>
           <Button variant="ghost" onClick={()=>setThemeOpen(v=>!v)}>Theme</Button>
+          <Button variant="ghost" onClick={()=>setSettingsOpen(v=>!v)}>Settings</Button>
           <div className="md:hidden flex-1" />
         </header>
 
@@ -518,6 +634,7 @@ export default function App() {
       </div>
       {paletteOpen && <CommandPalette />}
       {themeOpen && <ThemePanel />}
+      {settingsOpen && <SettingsPanel />}
       <div className="fixed bottom-0 left-0 right-0 border-t border-neutral-800 bg-neutral-950/90 backdrop-blur supports-[backdrop-filter]:bg-neutral-950/60">
         <div className="mx-auto max-w-screen-2xl px-4 h-20 flex items-center gap-4">
           <div className="flex items-center gap-3 min-w-0">
