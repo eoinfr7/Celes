@@ -580,6 +580,21 @@ export default function App() {
                       <div className="flex gap-2">
                         <Button className="mt-1 flex-1" onClick={() => doPlay(t)}>Play</Button>
                         <Button className="mt-1" variant="ghost" onClick={() => addToQueue(t)}>+ Queue</Button>
+                        <Button className="mt-1" variant="ghost" onClick={async ()=>{
+                          const url = prompt('Import playlist from URL (Spotify or Apple Music):')
+                          if (!url) return
+                          const data = await window.electronAPI.importPlaylistUrl?.(url)
+                          if (!data) { alert('Could not import'); return }
+                          const name = data.name || 'Imported Playlist'
+                          await createPlaylist(name)
+                          const pl = playlists.find(p=>p.name===name) || (await reloadPlaylists(), playlists.find(p=>p.name===name))
+                          const pid = pl?.id
+                          for (const it of (data.items||[])) {
+                            const search = await window.electronAPI.searchMusicWithFallback(`${it.artist} ${it.title}`, 'youtube', 1)
+                            if (Array.isArray(search) && search[0]) { await addTrackToDbPlaylist(pid, search[0]) }
+                          }
+                          alert('Imported '+(data.items?.length||0)+' tracks to '+name)
+                        }}>Import</Button>
                         <Button className="mt-1" variant="ghost" onClick={async () => {
                           let pid = activePlaylistId
                           if (!pid || !playlists.find(p=>p.id===pid)) {

@@ -233,6 +233,119 @@ class StreamingService extends BaseStreamingService {
     return { integratedLufs: -14, peakDb: -1.0 }; // neutral defaults
   }
 
+  getLoudnessCachePath(trackId, platform) {
+    try {
+      const dir = path.join(app.getPath('userData'), 'loudness-cache');
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      const slug = `${String(platform||'').toLowerCase()}_${String(trackId).replace(/[^a-z0-9_-]+/gi,'')}`;
+      return path.join(dir, `${slug}.json`);
+    } catch { return null; }
+  }
+
+  async analyzeLoudnessFfmpeg(streamUrl) {
+    try {
+      const ffmpegPath = (()=>{ try { return require('ffmpeg-static'); } catch { return null } })();
+      if (!ffmpegPath) return this.analyzeLoudnessPlaceholder(streamUrl);
+      const { spawn } = require('child_process');
+      return await new Promise((resolve) => {
+        const args = ['-hide_banner','-nostats','-i', streamUrl, '-filter_complex','ebur128','-f','null','-'];
+        const proc = spawn(ffmpegPath, args, { stdio: ['ignore','ignore','pipe'] });
+        let stderr = '';
+        proc.stderr.on('data', (d)=>{ stderr += d.toString() });
+        proc.on('close', () => {
+          const mI = stderr.match(/Integrated loudness:\s*(-?[0-9.]+)\s*LUFS/i);
+          const mP = stderr.match(/True peak:\s*(-?[0-9.]+)\s*dBFS/i) || stderr.match(/Peak:\s*(-?[0-9.]+)\s*dB/i);
+          const integratedLufs = mI ? parseFloat(mI[1]) : -14;
+          const peakDb = mP ? parseFloat(mP[1]) : -1.0;
+          resolve({ integratedLufs, peakDb });
+        });
+        proc.on('error', () => resolve(this.analyzeLoudnessPlaceholder(streamUrl)));
+      });
+    } catch { return this.analyzeLoudnessPlaceholder(streamUrl); }
+  }
+
+  async getTrackLoudness(trackId, platform = 'youtube', { force = false, ttlMs = 14*24*60*60*1000 } = {}) {
+    try {
+      const cachePath = this.getLoudnessCachePath(trackId, platform);
+      if (!force && cachePath && fs.existsSync(cachePath)) {
+        try {
+          const json = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+          if (json && Number.isFinite(json.ts) && (Date.now() - json.ts) < ttlMs) return json.data;
+        } catch {}
+      }
+      const res = await this.getStreamUrlWithFallback(trackId, platform);
+      const url = res?.streamUrl;
+      if (!url) return this.analyzeLoudnessPlaceholder(null);
+      const data = await this.analyzeLoudnessFfmpeg(url);
+      if (cachePath) {
+        try { fs.writeFileSync(cachePath, JSON.stringify({ ts: Date.now(), data }, null, 2)); } catch {}
+      }
+      return data;
+    } catch { return this.analyzeLoudnessPlaceholder(null); }
+  }
+
+  // --- Playlist importers ---
+  async importSpotifyPlaylist(url) {
+    try {
+      const html = await this.fetchText(url, 15000).catch(()=>null);
+      if (!html) return null;
+      let name = (html.match(/<title>([^<]+)<\/title>/i)?.[1] || '').replace(/\s*-\s*playlist\s*\|\s*spotify.*/i,'').trim();
+      const items = [];
+      // Try hydration JSON
+      const hydra = html.match(/__sc_hydration\s*=\s*(\[\{[\s\S]*?\}\]);/);
+      if (hydra && hydra[1]) {
+        try {
+          const arr = JSON.parse(hydra[1]);
+          const collect = (o)=>{ if(!o||typeof o!=='object') return; if (Array.isArray(o)) { o.forEach(collect); return; } for (const k of Object.keys(o)) { const v=o[k]; if (k==='track' && v && typeof v==='object') {
+              const title = v.name || v.title; const artist = (v.artists&&v.artists[0]&&v.artists[0].name)||''; if(title&&artist) items.push({ title, artist });
+            } collect(v);
+          } };
+          arr.forEach(collect);
+        } catch {}
+      }
+      // Regex fallback
+      if (items.length === 0) {
+        const re = /"track"\s*:\s*\{[\s\S]*?"name"\s*:\s*"([^"]+)"[\s\S]*?"artists"\s*:\s*\[[\s\S]*?"name"\s*:\s*"([^"]+)"/g;
+        let m; while ((m = re.exec(html))) { const title=m[1]; const artist=m[2]; if (title && artist) items.push({ title, artist }); }
+      }
+      if (!name) name = 'Imported from Spotify';
+      return { name, items };
+    } catch { return null; }
+  }
+
+  async importAppleMusicPlaylist(url) {
+    try {
+      const html = await this.fetchText(url, 15000).catch(()=>null);
+      if (!html) return null;
+      let name = (html.match(/<title>([^<]+)<\/title>/i)?.[1] || '').replace(/on Apple Music.*/i,'').trim();
+      const items = [];
+      const ld = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
+      if (ld && ld[1]) {
+        try {
+          const obj = JSON.parse(ld[1]);
+          const tracks = obj?.track?.itemListElement || obj?.tracks || [];
+          for (const it of tracks) {
+            const item = it.item || it;
+            const title = item?.name || item?.trackName;
+            const artist = (item?.byArtist && (item.byArtist.name || (Array.isArray(item.byArtist)&&item.byArtist[0]?.name))) || '';
+            if (title && artist) items.push({ title, artist });
+          }
+        } catch {}
+      }
+      if (!name) name = 'Imported from Apple Music';
+      return { name, items };
+    } catch { return null; }
+  }
+
+  async importPlaylistFromUrl(url) {
+    try {
+      const u = new URL(url);
+      if (/spotify\.com/.test(u.hostname)) return this.importSpotifyPlaylist(url);
+      if (/music\.apple\.com/.test(u.hostname) || /itunes\.apple\.com/.test(u.hostname)) return this.importAppleMusicPlaylist(url);
+      return null;
+    } catch { return null; }
+  }
+
   // Prefer real Internet Archive search over static items
   async searchInternetArchive(query, limit = 20) {
     const https = require('https');

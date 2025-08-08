@@ -453,6 +453,25 @@ class IPCHandlers {
       }
     });
 
+    // Loudness analysis
+    ipcMain.handle('get-track-loudness', async (event, trackId, platform, options) => {
+      try {
+        return await this.streamingService.getTrackLoudness(trackId, platform, options);
+      } catch (error) {
+        console.error('Error analyzing loudness:', error);
+        return null;
+      }
+    });
+
+    // Playlist import
+    ipcMain.handle('import-playlist-url', async (event, url) => {
+      try {
+        return await this.streamingService.importPlaylistFromUrl(url);
+      } catch (error) {
+        console.error('Error importing playlist:', error);
+        return null;
+      }
+    });
     // Offline downloads
     ipcMain.handle('download-track', async (event, track, targetDir) => {
       try {
