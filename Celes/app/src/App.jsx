@@ -250,10 +250,7 @@ export default function App() {
       const toProxy = (u) => `celes-stream://proxy?u=${encodeURIComponent(u)}`
       const res = await window.electronAPI.getStreamUrlWithFallback(next.id, next.platform||'youtube')
       if (res?.streamUrl) { next._prefetched = toProxy(res.streamUrl) }
-      if (!crossfadeOn && gaplessOn && next._prefetched && nextAudioRef.current) {
-        nextAudioRef.current.src = next._prefetched
-        try { nextAudioRef.current.load() } catch {}
-      }
+      // Do not auto-load into next element; we will lazy set src when transitioning
     } catch {}
   }
 
@@ -976,8 +973,8 @@ export default function App() {
           <aside className="hidden lg:flex flex-col gap-3">
             <div className="bg-neutral-900 border border-neutral-800 rounded p-3">
               <div className="text-sm font-semibold mb-2">Now playing</div>
-              <audio id="audio-el" ref={audioRef} controls className="w-full" />
-              <audio id="audio-next" ref={nextAudioRef} className="hidden" />
+              <audio id="audio-el" ref={audioRef} controls className="w-full" preload="auto" crossOrigin="anonymous" />
+              <audio id="audio-next" ref={nextAudioRef} className="hidden" preload="metadata" crossOrigin="anonymous" />
             </div>
             <div className="bg-neutral-900 border border-neutral-800 rounded p-3">
               <div className="text-sm font-semibold mb-2">Playlists</div>
@@ -1070,7 +1067,11 @@ export default function App() {
             </div>
             <div className="flex items-center gap-3 w-full max-w-xl">
               <span className="text-[11px] text-neutral-400 w-10 text-right">{fmtTime(progress)}</span>
-              <input type="range" min={0} max={Math.max(1, duration)} value={Math.min(progress, duration || 0)} onChange={(e) => { const t = Number(e.target.value); setProgress(t); if (audioRef.current) audioRef.current.currentTime = t }} className="w-full accent-primary" />
+              <input type="range" min={0} max={Math.max(1, duration)} value={Math.min(progress, duration || 0)}
+                onMouseDown={()=>{ if(audioRef.current) try{ audioRef.current.pause() }catch{} }}
+                onChange={(e) => { const t = Number(e.target.value); setProgress(t) }}
+                onMouseUp={(e)=>{ const t = Number(e.currentTarget.value); if (audioRef.current){ audioRef.current.currentTime = t; audioRef.current.play().catch(()=>{}) } }}
+                className="w-full accent-primary" />
               <span className="text-[11px] text-neutral-400 w-10">{fmtTime(duration)}</span>
             </div>
           </div>
