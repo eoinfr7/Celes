@@ -677,7 +677,7 @@ export default function App() {
               <Button className="flex-1" onClick={() => doPlay(t)}>Play</Button>
               <span className="flex items-center gap-2 ml-2">
                 <button className="p-1 hover:text-primary" title="Add to queue" onClick={() => addToQueue(t)}><ListPlus size={16}/></button>
-                <button className="p-1 hover:text-primary" title="Like" onClick={async () => { const id = await persistTrack(t); if (id) await window.electronAPI.toggleLikeSong?.(id) }}><Heart size={16}/></button>
+                <button className="p-1 hover:text-primary" aria-label="Like" title="Like" onClick={async () => { const id = await persistTrack(t); if (id) { await window.electronAPI.toggleLikeSong?.(id); /* optional: toast */ } }}><Heart size={16}/></button>
                 <button className="p-1 hover:text-primary" title="Add to playlist" onClick={async () => {
                   let pid = activePlaylistId
                   if (!pid || !playlists.find(p=>p.id===pid)) {
@@ -771,7 +771,7 @@ export default function App() {
       if (!keepOpen) setThemeOpen(false)
     }
 
-    return (
+  return (
       <div className="fixed right-4 top-16 z-50 bg-surface border border-border rounded p-3 w-80 shadow-xl">
         <div className="text-sm font-semibold mb-2 flex items-center justify-between">
           <span>Theme</span>
@@ -1011,7 +1011,7 @@ export default function App() {
                       </div>
                     ))}
               </div>
-                )}
+            )}
                 {!homeLoading && (<>
                   {explore && (
                     <>
@@ -1169,11 +1169,16 @@ export default function App() {
                     {activePlaylistId===p.id && (
                       <div className="mt-2 space-y-1 max-h-48 overflow-auto pr-1">
                         {(p.songs?.length || 0) === 0 && <div className="text-xs text-muted-foreground">No tracks yet</div>}
-                        {(p.songs || []).map((t, idx) => (
+                         {(p.songs || []).map((t, idx) => (
                           <div key={`${t.id}_${idx}`} className="text-xs flex items-center gap-2">
-                            <img src={t.thumbnail_url || t.thumbnail || 'https://via.placeholder.com/28'} className="w-7 h-7 rounded object-cover"/>
+                             <img src={t.thumbnail_url || t.thumbnail || 'https://via.placeholder.com/28'} className="w-7 h-7 rounded object-cover"/>
                             <div className="flex-1 truncate">{t.title}</div>
-                            <Button variant="ghost" onClick={() => doPlay({ ...t, platform: t.platform || t.type === 'stream' ? t.platform : 'internetarchive' })}>Play</Button>
+                             <div className="flex items-center gap-1">
+                               <Button variant="ghost" onClick={() => doPlay({ ...t, platform: t.platform || (t.type === 'stream' ? t.platform : 'internetarchive') })}>Play</Button>
+                               <Button variant="ghost" onClick={async ()=>{ await window.electronAPI.removeSongFromPlaylist?.(p.id, t.id); await reloadPlaylists(); }}>Remove</Button>
+                               <Button variant="ghost" onClick={async ()=>{ await window.electronAPI.moveSongInPlaylist?.(p.id, t.id, Math.max(0, idx-1)); await reloadPlaylists(); }}>↑</Button>
+                               <Button variant="ghost" onClick={async ()=>{ await window.electronAPI.moveSongInPlaylist?.(p.id, t.id, Math.min((p.songs?.length||1)-1, idx+1)); await reloadPlaylists(); }}>↓</Button>
+                             </div>
                           </div>
                         ))}
                         {playlistDl[p.id] && (

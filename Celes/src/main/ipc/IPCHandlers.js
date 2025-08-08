@@ -97,6 +97,18 @@ class IPCHandlers {
       return this.database.addSongToPlaylist(playlistId, songId);
     });
 
+    ipcMain.handle('remove-song-from-playlist', async (event, playlistId, songId) => {
+      try { return this.database.removeSongFromPlaylist(playlistId, songId) } catch (e) { return { success:false, error:e.message } }
+    });
+
+    ipcMain.handle('move-song-in-playlist', async (event, playlistId, songId, newIndex) => {
+      try { return this.database.moveSongInPlaylist(playlistId, songId, newIndex) } catch (e) { return { success:false, error:e.message } }
+    });
+
+    ipcMain.handle('get-playlist', async (event, playlistId) => {
+      try { return this.database.getPlaylistById(playlistId) } catch { return null }
+    });
+
     ipcMain.handle('get-album-art', async (event, songId) => {
       return this.database.getAlbumArt(songId);
     });

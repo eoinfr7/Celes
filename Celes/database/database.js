@@ -460,6 +460,60 @@ class MusicDatabase {
     `).all(playlistId);
   }
 
+  getPlaylistById(playlistId) {
+    try {
+      const playlist = this.db.prepare('SELECT * FROM playlists WHERE id = ?').get(playlistId);
+      if (!playlist) return null;
+      return { ...playlist, songs: this.getPlaylistSongs(playlistId) };
+    } catch (error) {
+      console.error('Error getting playlist by id:', error);
+      return null;
+    }
+  }
+
+  getSongByStream(platform, streamId) {
+    try {
+      return this.db.prepare('SELECT * FROM songs WHERE platform = ? AND stream_id = ?').get(platform, streamId) || null;
+    } catch (error) {
+      console.error('Error getting song by stream:', error);
+      return null;
+    }
+  }
+
+  removeSongFromPlaylist(playlistId, songId) {
+    try {
+      const res = this.db.prepare('DELETE FROM playlist_songs WHERE playlist_id = ? AND song_id = ?').run(playlistId, songId);
+      // Re-pack positions
+      const rows = this.db.prepare('SELECT song_id FROM playlist_songs WHERE playlist_id = ? ORDER BY position').all(playlistId);
+      let pos = 1;
+      const upd = this.db.prepare('UPDATE playlist_songs SET position = ? WHERE playlist_id = ? AND song_id = ?');
+      for (const r of rows) { upd.run(pos++, playlistId, r.song_id); }
+      return { success: true, changes: res.changes };
+    } catch (error) {
+      console.error('Error removing song from playlist:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  moveSongInPlaylist(playlistId, songId, newIndex) {
+    try {
+      const rows = this.db.prepare('SELECT song_id FROM playlist_songs WHERE playlist_id = ? ORDER BY position').all(playlistId);
+      const ids = rows.map(r => r.song_id);
+      const fromIdx = ids.indexOf(songId);
+      if (fromIdx === -1) return { success: false, error: 'Song not in playlist' };
+      const toIdx = Math.max(0, Math.min(newIndex, ids.length - 1));
+      if (fromIdx === toIdx) return { success: true };
+      ids.splice(toIdx, 0, ids.splice(fromIdx, 1)[0]);
+      const upd = this.db.prepare('UPDATE playlist_songs SET position = ? WHERE playlist_id = ? AND song_id = ?');
+      let pos = 1;
+      for (const id of ids) upd.run(pos++, playlistId, id);
+      return { success: true };
+    } catch (error) {
+      console.error('Error moving song in playlist:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
   // --- Downloads ---
   getDownloads() {
     return new Promise((resolve, reject) => {
