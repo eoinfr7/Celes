@@ -1,18 +1,28 @@
-# Celes
+# Celes — a beautiful, privacy‑minded desktop music player
 
-An open‑source desktop music player named after the FFVI character Celes and inspired by astronomy. Play local files and stream from YouTube and SoundCloud — no login.
+Play the internet your way. Celes blends a gorgeous, Spotify‑grade UI with fast, reliable streaming (YouTube first, no login), powerful playlists, and thoughtful touches that make listening feel effortless.
 
-<img width="1710" height="1069" alt="Screenshot 2025-08-08 at 5 59 25 AM" src="https://github.com/user-attachments/assets/3a5b8240-718d-40ee-8316-be6735738e37" />
+## Why you’ll love it
 
-## Features
+- Stunning, themeable UI: modern tokens, smooth micro‑interactions, focus rings, and accessible contrast. Make it yours.
+- Instant search and playback: tight debounced search, snappy seek, proper previous, keyboard shortcuts (Space/K, J/L/←/→, ↑/↓).
+- Explore that actually helps you discover: New Releases + Trending, refined to avoid tacky mixes and ultra‑long videos.
+- Playlists that scale: unlimited tracks, rename, covers, reorder, remove, Play All/Queue All, export/import JSON.
+- Liked Songs that stick: one heart adds to your library and the `Liked Songs` playlist.
+- Ad‑free video in Theater mode: full‑screen Now Playing with optional video or a silky visualizer.
+- Reliable streaming: hardened proxy, smart headers, instance rotation, strict YouTube playback with Internet Archive fallback.
+- Local + downloads: save streams to disk, manage a download queue, and keep listening offline.
 
-- Local library and playlists
-- Streaming from YouTube and SoundCloud (no login)
-- Fast search, queue, and context actions
-- Keyboard controls, shuffle/repeat, seek and volume
-- Smart history: Recently/Most played
-- Tray + notifications when minimized
-- Minimal dark UI that adapts to any window size
+## Headline features
+
+- Explore: New Releases and Trending powered by YouTube, filtered for quality.
+- Powerful queue: Play Next, drag/move (basic up/down today), radio‑style auto‑queue similar tracks.
+- Dual‑audio crossfade engine for fast, gapless track changes.
+- Lyrics: synced where available, plain‑text fallbacks, smooth highlighting, mini lyric line.
+- Theming: Solarized-by-default plus presets (Light Green, Coral Blue, Silver, Midnight, Lilac). Tweak HSL live.
+- Mini Dock: an in‑app mini player with video/visualizer toggles.
+
+## Quick start
 
 ## Installation
 
@@ -44,31 +54,14 @@ npm run build:mac
 npm run build:linux
 ```
 
-## Usage
+## Use it like a pro
 
-### Getting Started
-1. Launch Celes
-2. Click "Add Music" or "Import Folders" to add your music library
-3. Use the search bar to find specific tracks
-4. Click any song to start playing
+- Space/K: Play/Pause • J/←: -5s • L/→: +5–10s • ↑/↓: volume
+- Click heart to add to `Liked Songs` (and your library)
+- Add to playlist from the card’s action row; create‑and‑add in one step
+- Open any playlist to Play All or Queue All instantly
 
-### Keyboard Shortcuts
-- `Space` - Play/Pause
-- `Left Arrow` - Previous track
-- `Right Arrow` - Next track
-- `Up Arrow` - Volume up
-- `Down Arrow` - Volume down
-
-### Right-Click Actions
-- **Play Song** - Start playing immediately
-- **Play Next** - Add to front of queue
-- **Add to Queue** - Add to end of queue
-- **Search by Artist** - Filter by the song's artist
-- **Search by Album** - Filter by the song's album
-- **Like/Unlike** - Add to or remove from liked songs
-- **Delete** - Remove from library
-
-## Technology Stack
+## Tech
 
 - **Electron** - Cross-platform desktop framework
 - **SQLite3** - Local database for music metadata
@@ -78,17 +71,8 @@ npm run build:linux
 
 ## Architecture
 
-### Main Process
-- **Database Management** - SQLite database for music metadata and playlists
-- **File System Operations** - Music file importing and folder watching
-- **IPC Handlers** - Communication between main and renderer processes
-- **System Integration** - Media keys, notifications, and tray functionality
-
-### Renderer Process
-- **Audio Player** - Core playback engine with crossfade support
-- **UI Components** - Modular interface components
-- **Music Library** - Song list rendering and management
-- **Search & Navigation** - Real-time filtering and view switching
+- Main: Electron services (streaming proxy, updates, tray, settings), IPC, SQLite.
+- Renderer: React + Tailwind tokens, dual‑audio player, lyrics, downloads, playlists.
 
 ## File Structure
 
