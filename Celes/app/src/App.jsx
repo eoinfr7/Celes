@@ -612,6 +612,25 @@ export default function App() {
           <div className="text-sm font-semibold">Downloads</div>
           <div className="text-[11px] text-neutral-400">{fmt(quota.used)} / {fmt(quota.limit)}</div>
         </div>
+        <div className="mb-3 flex gap-2">
+          <Button onClick={refresh}>Refresh</Button>
+          <Button variant="ghost" onClick={async()=>{
+            // Download full library: stream songs only (not already downloaded)
+            const all = await window.electronAPI.getStreamingSongs?.()
+            const settings = await window.electronAPI.getSettings?.()||{}
+            const targetDir = settings.downloadDir || prompt('Download folder')
+            if (!targetDir) return
+            let count=0
+            for (const t of (all||[])){
+              try {
+                const res = await window.electronAPI.downloadTrack?.({ id:t.stream_id||t.id, stream_id:String(t.stream_id||t.id), platform:t.platform||'youtube', title:t.title, artist:t.artist, streamUrl:t.stream_url }, targetDir)
+                if (res && !res.error) count++
+              } catch {}
+            }
+            alert('Downloaded '+count+' tracks')
+            refresh()
+          }}>Download Full Library</Button>
+        </div>
         <div className="space-y-2">
           {loading && <div className="text-xs text-neutral-400">Loading…</div>}
           {!loading && items.length===0 && <div className="text-xs text-neutral-500">No downloads yet</div>}
