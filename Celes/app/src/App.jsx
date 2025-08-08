@@ -131,6 +131,40 @@ export default function App() {
     filtersRef.current.forEach((f,i)=>{ try{ f.gain.value = gains[i]||0 }catch{}})
   }
 
+  function parseLrc(lrc){
+    try {
+      const lines = []
+      const rx = /\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\](.*)/
+      for (const raw of (lrc||'').split(/\r?\n/)){
+        const m = raw.match(rx)
+        if (!m) continue
+        const mm = parseInt(m[1],10)
+        const ss = parseInt(m[2],10)
+        const ms = m[3]? parseInt(m[3].padEnd(3,'0'),10) : 0
+        const t = mm*60 + ss + (ms/1000)
+        const text = (m[4]||'').trim()
+        if (text) lines.push({ t, text })
+      }
+      return lines.sort((a,b)=>a.t-b.t)
+    } catch { return [] }
+  }
+
+  function updateActiveLyric(currentTime){
+    try {
+      const arr = parsedLrcRef.current
+      if (!arr || arr.length===0) { if (activeLrcIdxRef.current!==-1){ activeLrcIdxRef.current=-1; setActiveLrcIdx(-1); setMiniLyric('') } return }
+      let lo=0, hi=arr.length-1, idx=-1
+      while (lo<=hi){ const mid=(lo+hi>>1); if (arr[mid].t<=currentTime){ idx=mid; lo=mid+1 } else { hi=mid-1 } }
+      if (idx !== activeLrcIdxRef.current){
+        activeLrcIdxRef.current = idx
+        setActiveLrcIdx(idx)
+        setMiniLyric(idx>=0? arr[idx].text : '')
+        const el = document.getElementById('lrc-line-'+idx)
+        if (el) el.scrollIntoView({ block:'center', behavior:'smooth' })
+      }
+    } catch {}
+  }
+
   async function applyNormalizationForTrack(track){
     try {
       if (!normalizeOn || !track) { if (normalizeGainRef.current) normalizeGainRef.current.gain.value = 1; return }
@@ -366,17 +400,20 @@ export default function App() {
     if (!audio) return
     audio.volume = volume
     const onTime = () => setProgress(audio.currentTime || 0)
+    const onTimeLyrics = () => updateActiveLyric(audio.currentTime||0)
     const onDur = () => setDuration(audio.duration || 0)
     const onEnd = async () => { if (queueRef.current.length === 0) { await ensureRadioQueue() } nextFromQueue() }
     const onPlay = () => setIsPlaying(true)
     const onPause = () => setIsPlaying(false)
     audio.addEventListener('timeupdate', onTime)
+    audio.addEventListener('timeupdate', onTimeLyrics)
     audio.addEventListener('durationchange', onDur)
     audio.addEventListener('ended', onEnd)
     audio.addEventListener('play', onPlay)
     audio.addEventListener('pause', onPause)
     return () => {
       audio.removeEventListener('timeupdate', onTime)
+      audio.removeEventListener('timeupdate', onTimeLyrics)
       audio.removeEventListener('durationchange', onDur)
       audio.removeEventListener('ended', onEnd)
       audio.removeEventListener('play', onPlay)
@@ -387,6 +424,18 @@ export default function App() {
   useEffect(() => { try { localStorage.setItem('celes.volume', String(volume)) } catch {} ; if (audioRef.current) audioRef.current.volume = volume }, [volume])
   useEffect(() => { window.electronAPI.streamingHealthCheck?.() }, [])
   useEffect(() => { if (currentTrack) applyNormalizationForTrack(currentTrack) }, [normalizeOn, targetLufs])
+  useEffect(() => {
+    setParsedLrc([]); parsedLrcRef.current=[]; setActiveLrcIdx(-1); activeLrcIdxRef.current=-1; setMiniLyric('')
+    if (!currentTrack) return
+    ;(async()=>{
+      try {
+        const meta = { artist: currentTrack.artist, title: currentTrack.title, duration: currentTrack.duration }
+        const l = await window.electronAPI.getLyricsForTrack?.(meta)
+        if (l?.syncedLyrics){ const arr = parseLrc(l.syncedLyrics); setParsedLrc(arr); parsedLrcRef.current = arr }
+        else { setParsedLrc([]); parsedLrcRef.current=[] }
+      } catch {}
+    })()
+  }, [currentTrack])
   useEffect(() => {
     const onKey = (e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase()==='k') { e.preventDefault(); setPaletteOpen(v=>!v) } }
     window.addEventListener('keydown', onKey)
@@ -590,6 +639,11 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [lyricsOpen, setLyricsOpen] = useState(false)
   const [lyricsData, setLyricsData] = useState(null)
+  const [parsedLrc, setParsedLrc] = useState([])
+  const [activeLrcIdx, setActiveLrcIdx] = useState(-1)
+  const parsedLrcRef = useRef([])
+  const activeLrcIdxRef = useRef(-1)
+  const [miniLyric, setMiniLyric] = useState('')
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 flex">
@@ -825,6 +879,7 @@ export default function App() {
           <div className="hidden md:flex items-center gap-2 w-48 justify-end">
             <button className="p-2 rounded hover:bg-neutral-800" onClick={() => setVolume(v => v > 0 ? 0 : 0.8)} aria-label="Mute">{volume > 0 ? <Volume2 size={18}/> : <VolumeX size={18}/>} </button>
             <input type="range" min={0} max={1} step={0.01} value={volume} onChange={(e) => setVolume(Number(e.target.value))} className="w-32 accent-primary" />
+            {miniLyric && <div className="text-[11px] text-neutral-400 truncate max-w-[220px]">{miniLyric}</div>}
             <Button variant="ghost" onClick={async()=>{ if(!currentTrack) return; setLyricsOpen(true); setLyricsData({ loading:true }); const meta = { artist: currentTrack.artist, title: currentTrack.title, duration: currentTrack.duration }; const l = await window.electronAPI.getLyricsForTrack?.(meta); setLyricsData(l||{plainLyrics:'No lyrics found'}); }}>Lyrics</Button>
           </div>
         </div>
@@ -835,7 +890,13 @@ export default function App() {
             <div className="text-sm font-semibold mb-2">Lyrics</div>
             {!lyricsData && <div className="text-xs text-neutral-400">Loading…</div>}
             {lyricsData?.syncedLyrics ? (
-              <pre className="whitespace-pre-wrap text-xs text-neutral-200">{lyricsData.syncedLyrics}</pre>
+              <div className="text-sm leading-7">
+                {(parsedLrc||[]).map((line,idx)=> (
+                  <div key={idx} id={`lrc-line-${idx}`} className={idx===activeLrcIdx? 'text-primary font-semibold' : 'text-neutral-300'}>
+                    {line.text}
+                  </div>
+                ))}
+              </div>
             ) : (
               <pre className="whitespace-pre-wrap text-xs text-neutral-200">{lyricsData?.plainLyrics || 'No lyrics found'}</pre>
             )}
