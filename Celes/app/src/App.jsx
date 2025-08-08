@@ -321,7 +321,7 @@ export default function App() {
     const toProxy = (u) => `celes-stream://proxy?u=${encodeURIComponent(u)}`
     let src = track?._prefetched || (track?.streamUrl ? toProxy(track.streamUrl) : null)
     if (!src) {
-      const prefPlat = track.platform || 'internetarchive'
+      const prefPlat = track.platform || 'youtube'
       const result = await window.electronAPI.getStreamUrlWithFallback(track.id, prefPlat).catch(() => null)
       if (result?.streamUrl) src = toProxy(result.streamUrl)
     }

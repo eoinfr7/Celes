@@ -6,7 +6,8 @@ const path = require('path');
 class StreamingService extends BaseStreamingService {
   constructor() {
     super();
-    this.fallbackEnabled = true;
+    // Default: do NOT cross-platform fallback for streams to avoid mismatched audio sources
+    this.fallbackEnabled = false;
   }
 
   findCachedTrack(trackId) {
@@ -524,19 +525,22 @@ class StreamingService extends BaseStreamingService {
   }
 
   async getStreamUrlWithFallback(trackId, primaryPlatform = 'youtube') {
+    // Always try primary first
     try {
       const url = await this.getStreamUrl(trackId, primaryPlatform);
       if (url) return { streamUrl: url, platform: primaryPlatform };
     } catch (primaryError) {
       if (!this.fallbackEnabled) throw primaryError;
-      // continue to fallbacks below
     }
-    const order = ['youtube', 'soundcloud', 'internetarchive'];
+    // If no URL and fallback disabled, stop here
+    if (!this.fallbackEnabled) return null;
+    // Otherwise, try other platforms in order excluding the primary
+    const order = ['youtube', 'soundcloud', 'internetarchive'].filter(p => p !== primaryPlatform);
     for (const p of order) {
       try {
         const url = await this.getStreamUrl(trackId, p);
         if (url) return { streamUrl: url, platform: p };
-      } catch { /* next */ }
+      } catch { /* try next */ }
     }
     return null;
   }
