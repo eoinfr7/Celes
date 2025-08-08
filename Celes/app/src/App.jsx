@@ -104,6 +104,8 @@ export default function App() {
   const [dockVideoOn, setDockVideoOn] = useState(false)
   const dockVideoRef = useRef(null)
   const [dockVideoUrl, setDockVideoUrl] = useState(null)
+  const [dockVideoId, setDockVideoId] = useState(null)
+  const [dockVideoFailed, setDockVideoFailed] = useState(false)
 
   function deriveYouTubeId(track){
     try {
@@ -1140,6 +1142,7 @@ export default function App() {
                   try {
                     // Turn off visualizer when enabling video
                     setDockVisOn(false)
+                    setDockVideoFailed(false)
                     let vid = deriveYouTubeId(currentTrack)
                     if (!vid && currentTrack){
                       const q = [currentTrack.artist, currentTrack.title].filter(Boolean).join(' ')
@@ -1148,6 +1151,7 @@ export default function App() {
                       if (cand) vid = String(cand.id).slice(0,11)
                     }
                     if (!vid) { setDockVideoOn(false); return }
+                    setDockVideoId(vid)
                     const res = await window.electronAPI.getYouTubeVideoStream?.(vid)
                     const url = res?.streamUrl
                     if (!url) { setDockVideoOn(false); return }
@@ -1178,7 +1182,11 @@ export default function App() {
           {(dockVisOn || dockVideoOn) && (
             <div className="mt-2 rounded overflow-hidden border border-neutral-800 bg-black/60" style={{height: 120}}>
               {dockVideoOn ? (
-                <video ref={dockVideoRef} src={dockVideoUrl||''} className="w-full h-full object-contain bg-black" muted playsInline autoPlay crossOrigin="anonymous" onCanPlay={()=>{ try { dockVideoRef.current?.play?.() } catch {} }} />
+                dockVideoUrl && !dockVideoFailed ? (
+                  <video ref={dockVideoRef} src={dockVideoUrl||''} className="w-full h-full object-contain bg-black" muted playsInline autoPlay crossOrigin="anonymous" onError={()=>setDockVideoFailed(true)} onCanPlay={()=>{ try { dockVideoRef.current?.play?.() } catch {} }} />
+                ) : (
+                  dockVideoId ? <iframe title="dock-video" src={`https://piped.video/embed/${dockVideoId}?autoplay=1&muted=1&controls=0`} className="w-full h-full" allow="autoplay; encrypted-media; picture-in-picture" referrerPolicy="no-referrer" /> : <canvas id="dock-vis" className="w-full h-full" />
+                )
               ) : (
                 <canvas id="dock-vis" className="w-full h-full" />
               )}
