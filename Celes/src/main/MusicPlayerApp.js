@@ -228,6 +228,7 @@ class MusicPlayerApp {
 
   setupStreamingProtocol() {
     const { protocol, net } = require('electron');
+    const { session } = require('electron');
     
     // Register the custom protocol to handle streaming URLs
     protocol.handle('celes-stream', async (request) => {
@@ -246,14 +247,23 @@ class MusicPlayerApp {
           forwarded.referer = forwarded.referer || 'https://www.youtube.com/';
           forwarded.origin = forwarded.origin || 'https://www.youtube.com';
         }
-        const init = { method: request.method, headers: forwarded };
+        // Ensure Range passthrough for snappy seeks; strip sec-fetch Site headers that can cause 403s
+        delete forwarded['sec-fetch-site']; delete forwarded['sec-fetch-mode']; delete forwarded['sec-fetch-dest'];
+        const init = { method: request.method, headers: forwarded, redirect: 'follow' };
         const response = await net.fetch(originalUrl, init);
 
         if (!response || !response.ok) {
           console.error(`🎵 PROTOCOL HANDLER: Upstream ${response?.status} ${response?.statusText} for ${originalUrl.slice(0, 80)}...`);
           return new Response('Upstream fetch failed', { status: response?.status || 502, statusText: response?.statusText || 'Bad Gateway' });
         }
-        return response;
+        // Rebuild response to preserve Range/Content-Length headers for media element
+        const headers = new Headers();
+        for (const [k, v] of response.headers.entries()) { headers.set(k, v); }
+        if (!headers.get('accept-ranges')) headers.set('accept-ranges', 'bytes');
+        // Content-Disposition may break streaming in some cases; preserve content-type and content-range
+        const status = response.status;
+        const statusText = response.statusText;
+        return new Response(response.body, { status, statusText, headers });
         
       } catch (error) {
         console.error('🎵 PROTOCOL HANDLER ERROR:', error);

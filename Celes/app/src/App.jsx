@@ -62,11 +62,15 @@ export default function App() {
   const [isPlaying, setIsPlaying] = useState(false)
   const [progress, setProgress] = useState(0)
   const [duration, setDuration] = useState(0)
+  const isSeekingRef = useRef(false)
   const [volume, setVolume] = useState(() => {
     try { const v = Number(localStorage.getItem('celes.volume')); return Number.isFinite(v)? Math.max(0, Math.min(1, v)) : 0.8 } catch { return 0.8 }
   })
   const audioRef = useRef(null)
   const nextAudioRef = useRef(null)
+  const [activeSide, setActiveSide] = useState('main') // 'main' or 'next'
+  const getActiveEl = () => (activeSide === 'main' ? audioRef.current : nextAudioRef.current)
+  const getInactiveEl = () => (activeSide === 'main' ? nextAudioRef.current : audioRef.current)
   const queueRef = useRef([])
   const radioOnRef = useRef(radioOn)
   const currentTrackRef = useRef(null)
@@ -136,7 +140,7 @@ export default function App() {
   }
 
   function ensureAudioGraph(){
-    const el = audioRef.current
+    const el = getActiveEl()
     if (!el) return
     if (!audioCtxRef.current || !sourceRef.current){
       buildAudioGraphFor(el)
@@ -148,7 +152,7 @@ export default function App() {
       const ctx = audioCtxRef.current
       if (!ctx) { ensureAudioGraph(); return }
       // let GC handle old nodes; just rebuild for new element
-      buildAudioGraphFor(audioRef.current)
+      buildAudioGraphFor(getActiveEl())
       if (eqOn) applyEqGains(eqGains)
     } catch {}
   }
@@ -209,9 +213,9 @@ export default function App() {
     applyEqGains(g)
   }
 
-  async function crossfadeTo(srcUrl){
-    const a = audioRef.current
-    const b = nextAudioRef.current
+  async function crossfadeTo(srcUrl, fadeMs){
+    const a = getActiveEl()
+    const b = getInactiveEl()
     if (!a || !srcUrl){ return }
     // If crossfade disabled or we don't have a second element, play directly
     if (!crossfadeOn || a.paused || !b){
@@ -223,8 +227,9 @@ export default function App() {
     b.volume = 0
     b.src = srcUrl
     try { await b.play() } catch {}
-    const steps = Math.max(10, Math.floor(crossfadeMs/40))
-    const step = crossfadeMs/steps
+    const useMs = Number.isFinite(fadeMs) ? Math.max(50, fadeMs) : crossfadeMs
+    const steps = Math.max(6, Math.floor(useMs/40))
+    const step = useMs/steps
     let i=0
     const timer = setInterval(()=>{
       i++
@@ -233,12 +238,11 @@ export default function App() {
       b.volume = Math.min(1, t)
       if (i>=steps){
         clearInterval(timer)
-        a.pause(); a.src=''; a.volume=1
-        // swap refs: make b the main player by swapping elements
-        const tmp = audioRef.current
-        audioRef.current = nextAudioRef.current
-        nextAudioRef.current = tmp
+        try { a.pause() } catch {}
+        try { a.src='' } catch {}
+        a.volume=1; b.volume=1
         setIsPlaying(true)
+        setActiveSide(prev => prev === 'main' ? 'next' : 'main')
       }
     }, step)
   }
@@ -313,7 +317,7 @@ export default function App() {
     }
   }
 
-  async function doPlay(track) {
+  async function doPlay(track, options = {}) {
     const a = audioRef.current
     if (!a) return
     const toProxy = (u) => `celes-stream://proxy?u=${encodeURIComponent(u)}`
@@ -344,7 +348,7 @@ export default function App() {
     }
     if (!src) return
     ensureAudioGraph(); if (eqOn) applyEqGains(eqGains)
-    await crossfadeTo(src)
+    await crossfadeTo(src, options.fadeMs)
     rebuildAudioGraph()
     await applyNormalizationForTrack(track)
       setCurrentTrack(track)
@@ -407,11 +411,14 @@ export default function App() {
 
   const activePlaylist = playlists.find(p => p.id === activePlaylistId) || null
 
+  const isSwitchingRef = useRef(false)
   function nextFromQueue() {
+    if (isSwitchingRef.current) return
+    isSwitchingRef.current = true
     setQueue((q) => {
-      if (q.length === 0) { setIsPlaying(false); return q }
+      if (q.length === 0) { setIsPlaying(false); isSwitchingRef.current = false; return q }
       const [next, ...rest] = q
-      void doPlay(next)
+      Promise.resolve().then(async ()=>{ try { await doPlay(next, { fadeMs: 250 }) } finally { isSwitchingRef.current = false } })
       return rest
     })
   }
@@ -446,18 +453,24 @@ export default function App() {
   useEffect(() => { if (radioOn && (queue.length < 1)) { void ensureRadioQueue() } }, [queue.length, radioOn])
 
   useEffect(() => {
-    const audio = audioRef.current
+    const audio = getActiveEl()
     if (!audio) return
-    audio.volume = volume
-    const onTime = () => setProgress(audio.currentTime || 0)
+    // keep both elements at same volume for seamless switching
+    try { if (audioRef.current) audioRef.current.volume = volume } catch {}
+    try { if (nextAudioRef.current) nextAudioRef.current.volume = volume } catch {}
+    const onTime = () => { if (!isSeekingRef.current) setProgress(audio.currentTime || 0) }
     const onTimeLyrics = () => updateActiveLyric(audio.currentTime||0)
     const onDur = () => setDuration(audio.duration || 0)
+    const onSeeking = () => { /* no-op, we manage via ref */ }
+    const onSeeked = () => { isSeekingRef.current = false }
     const onEnd = async () => { if (queueRef.current.length === 0) { await ensureRadioQueue() } nextFromQueue() }
     const onPlay = () => setIsPlaying(true)
     const onPause = () => setIsPlaying(false)
     audio.addEventListener('timeupdate', onTime)
     audio.addEventListener('timeupdate', onTimeLyrics)
     audio.addEventListener('durationchange', onDur)
+    audio.addEventListener('seeking', onSeeking)
+    audio.addEventListener('seeked', onSeeked)
     audio.addEventListener('ended', onEnd)
     audio.addEventListener('play', onPlay)
     audio.addEventListener('pause', onPause)
@@ -465,13 +478,15 @@ export default function App() {
       audio.removeEventListener('timeupdate', onTime)
       audio.removeEventListener('timeupdate', onTimeLyrics)
       audio.removeEventListener('durationchange', onDur)
+      audio.removeEventListener('seeking', onSeeking)
+      audio.removeEventListener('seeked', onSeeked)
       audio.removeEventListener('ended', onEnd)
       audio.removeEventListener('play', onPlay)
       audio.removeEventListener('pause', onPause)
     }
-  }, [audioRef.current])
+  }, [activeSide, volume])
 
-  useEffect(() => { try { localStorage.setItem('celes.volume', String(volume)) } catch {} ; if (audioRef.current) audioRef.current.volume = volume }, [volume])
+  useEffect(() => { try { localStorage.setItem('celes.volume', String(volume)) } catch {} ; try { if (audioRef.current) audioRef.current.volume = volume } catch {}; try { if (nextAudioRef.current) nextAudioRef.current.volume = volume } catch {} }, [volume])
   useEffect(() => { window.electronAPI.streamingHealthCheck?.() }, [])
   useEffect(() => { if (currentTrack) applyNormalizationForTrack(currentTrack) }, [normalizeOn, targetLufs])
   useEffect(() => {
@@ -1067,10 +1082,10 @@ export default function App() {
             </div>
             <div className="flex items-center gap-3 w-full max-w-xl">
               <span className="text-[11px] text-neutral-400 w-10 text-right">{fmtTime(progress)}</span>
-              <input type="range" min={0} max={Math.max(1, duration)} value={Math.min(progress, duration || 0)}
-                onMouseDown={()=>{ if(audioRef.current) try{ audioRef.current.pause() }catch{} }}
+              <input type="range" min={0} max={Math.max(1, duration)} step="any" value={Math.min(progress, duration || 0)}
+                onMouseDown={()=>{ isSeekingRef.current = true; const el = getActiveEl(); if(el) try{ el.pause() }catch{} }}
                 onChange={(e) => { const t = Number(e.target.value); setProgress(t) }}
-                onMouseUp={(e)=>{ const t = Number(e.currentTarget.value); if (audioRef.current){ audioRef.current.currentTime = t; audioRef.current.play().catch(()=>{}) } }}
+                onMouseUp={(e)=>{ const t = Number(e.currentTarget.value); const el = getActiveEl(); if (el){ if (typeof el.fastSeek === 'function'){ try { el.fastSeek(t) } catch { el.currentTime = t } } else { el.currentTime = t } el.play().catch(()=>{}) } isSeekingRef.current = false }}
                 className="w-full accent-primary" />
               <span className="text-[11px] text-neutral-400 w-10">{fmtTime(duration)}</span>
             </div>
