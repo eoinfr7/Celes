@@ -479,6 +479,12 @@ export default function App() {
   function fmtTime(s) { if (!Number.isFinite(s) || s < 0) return '0:00'; const m=Math.floor(s/60); const ss=Math.floor(s%60).toString().padStart(2,'0'); return `${m}:${ss}` }
 
   useEffect(() => { if (view === 'home') loadHome() }, [view])
+  useEffect(() => {
+    const onReady = () => { if (view === 'home') loadHome() }
+    try { window.electronAPI?.onRendererCommand?.(null) } catch {}
+    window.addEventListener('handlers-ready', onReady)
+    return () => window.removeEventListener('handlers-ready', onReady)
+  }, [view])
   useEffect(() => { reloadPlaylists() }, [])
 
   useEffect(() => {

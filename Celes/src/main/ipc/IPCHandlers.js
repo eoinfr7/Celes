@@ -27,6 +27,15 @@ class IPCHandlers {
     this.setupUpdateHandlers();
     this.setupStreamingHandlers();
 
+    // Notify renderer once handlers are ready
+    try {
+      const sendReady = () => { try { this.mainWindow?.webContents?.send('handlers-ready'); } catch {}
+      };
+      this.mainWindow?.webContents?.once('dom-ready', sendReady);
+      // Also try sending immediately and after a short delay to cover races
+      sendReady(); setTimeout(sendReady, 500);
+    } catch {}
+
     // Periodically forward now playing info to the mini player (if open)
     const forwardNowPlaying = async () => {
       try {
