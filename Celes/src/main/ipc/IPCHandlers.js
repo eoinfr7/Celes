@@ -472,6 +472,16 @@ class IPCHandlers {
         return null;
       }
     });
+
+    // Lyrics
+    ipcMain.handle('get-lyrics-for-track', async (event, meta) => {
+      try {
+        return await this.streamingService.getLyricsForTrack(meta);
+      } catch (error) {
+        console.error('Error getting lyrics:', error);
+        return null;
+      }
+    });
     // Offline downloads
     ipcMain.handle('download-track', async (event, track, targetDir) => {
       try {

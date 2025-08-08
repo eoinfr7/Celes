@@ -346,6 +346,62 @@ class StreamingService extends BaseStreamingService {
     } catch { return null; }
   }
 
+  // --- Lyrics (LRCLIB) ---
+  getLyricsCachePath(artist, title) {
+    try {
+      const dir = path.join(app.getPath('userData'), 'lyrics-cache');
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      const slug = `${String(artist||'').toLowerCase().replace(/[^a-z0-9]+/gi,'-')}_${String(title||'').toLowerCase().replace(/[^a-z0-9]+/gi,'-')}`.replace(/^-+|-+$/g,'');
+      return path.join(dir, `${slug}.json`);
+    } catch { return null; }
+  }
+
+  async searchLyricsLrclib(artist, title, durationSec) {
+    try {
+      const base = 'https://lrclib.net/api/search';
+      const params = new URLSearchParams();
+      if (title) params.set('track_name', title);
+      if (artist) params.set('artist_name', artist);
+      if (Number.isFinite(durationSec)) params.set('duration', String(Math.round(durationSec)));
+      const url = `${base}?${params.toString()}`;
+      const res = await this.doJsonGet(url, 12000).catch(()=>null);
+      if (!res) return null;
+      const list = Array.isArray(res) ? res : [];
+      if (list.length === 0) return null;
+      // choose best by closest duration
+      let best = list[0];
+      if (Number.isFinite(durationSec)) {
+        best = list.slice().sort((a,b)=> Math.abs((a.duration||0)-durationSec) - Math.abs((b.duration||0)-durationSec))[0] || list[0];
+      }
+      return {
+        source: 'lrclib',
+        syncedLyrics: best.syncedLyrics || null,
+        plainLyrics: best.plainLyrics || null,
+        trackName: best.trackName,
+        artistName: best.artistName,
+        duration: best.duration || null,
+      };
+    } catch { return null; }
+  }
+
+  async getLyricsForTrack(meta) {
+    try {
+      const artist = (meta && meta.artist) || '';
+      const title = (meta && meta.title) || '';
+      const duration = (meta && Number(meta.duration)) || null;
+      const cachePath = this.getLyricsCachePath(artist, title);
+      if (cachePath && fs.existsSync(cachePath)) {
+        try { return JSON.parse(fs.readFileSync(cachePath,'utf8')); } catch {}
+      }
+      const lrclib = await this.searchLyricsLrclib(artist, title, duration);
+      if (lrclib) {
+        if (cachePath) { try { fs.writeFileSync(cachePath, JSON.stringify(lrclib, null, 2)); } catch {} }
+        return lrclib;
+      }
+      return null;
+    } catch { return null; }
+  }
+
   // Prefer real Internet Archive search over static items
   async searchInternetArchive(query, limit = 20) {
     const https = require('https');

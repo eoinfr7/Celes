@@ -588,6 +588,8 @@ export default function App() {
   }
 
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [lyricsOpen, setLyricsOpen] = useState(false)
+  const [lyricsData, setLyricsData] = useState(null)
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 flex">
@@ -823,11 +825,28 @@ export default function App() {
           <div className="hidden md:flex items-center gap-2 w-48 justify-end">
             <button className="p-2 rounded hover:bg-neutral-800" onClick={() => setVolume(v => v > 0 ? 0 : 0.8)} aria-label="Mute">{volume > 0 ? <Volume2 size={18}/> : <VolumeX size={18}/>} </button>
             <input type="range" min={0} max={1} step={0.01} value={volume} onChange={(e) => setVolume(Number(e.target.value))} className="w-32 accent-primary" />
+            <Button variant="ghost" onClick={async()=>{ if(!currentTrack) return; setLyricsOpen(true); setLyricsData({ loading:true }); const meta = { artist: currentTrack.artist, title: currentTrack.title, duration: currentTrack.duration }; const l = await window.electronAPI.getLyricsForTrack?.(meta); setLyricsData(l||{plainLyrics:'No lyrics found'}); }}>Lyrics</Button>
           </div>
         </div>
       </div>
+      {lyricsOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center" onClick={()=>setLyricsOpen(false)}>
+          <div className="w-[640px] max-h-[70vh] overflow-auto bg-neutral-900 border border-neutral-800 rounded p-4" onClick={(e)=>e.stopPropagation()}>
+            <div className="text-sm font-semibold mb-2">Lyrics</div>
+            {!lyricsData && <div className="text-xs text-neutral-400">Loading…</div>}
+            {lyricsData?.syncedLyrics ? (
+              <pre className="whitespace-pre-wrap text-xs text-neutral-200">{lyricsData.syncedLyrics}</pre>
+            ) : (
+              <pre className="whitespace-pre-wrap text-xs text-neutral-200">{lyricsData?.plainLyrics || 'No lyrics found'}</pre>
+            )}
+            <div className="text-[11px] text-neutral-500 mt-2">Source: {lyricsData?.source || '—'}</div>
+            <div className="mt-3 flex justify-end"><Button variant="ghost" onClick={()=>setLyricsOpen(false)}>Close</Button></div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
+
 
 
