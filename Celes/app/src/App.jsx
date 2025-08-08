@@ -66,6 +66,7 @@ export default function App() {
   const saveCovers = (next) => { setPlaylistCovers(next); try { localStorage.setItem('celes.playlistCovers', JSON.stringify(next)) } catch {} }
 
   const [currentTrack, setCurrentTrack] = useState(null)
+  const [likedSet, setLikedSet] = useState(()=>{ try { return new Set(JSON.parse(localStorage.getItem('celes.likedSet')||'[]')) } catch { return new Set() } })
   const [isPlaying, setIsPlaying] = useState(false)
   const [progress, setProgress] = useState(0)
   const [duration, setDuration] = useState(0)
@@ -486,6 +487,7 @@ export default function App() {
     return () => window.removeEventListener('handlers-ready', onReady)
   }, [view])
   useEffect(() => { reloadPlaylists() }, [])
+  useEffect(() => { (async()=>{ try { const liked = await window.electronAPI.getLikedSongs?.(); if (Array.isArray(liked)) { const keys = liked.map(t=> `${t.platform||'youtube'}:${String(t.stream_id||t.id)}`); setLikedSet(new Set(keys)); try{ localStorage.setItem('celes.likedSet', JSON.stringify(keys)) }catch{} } } catch {} })() }, [])
 
   useEffect(() => {
     queueRef.current = queue
@@ -670,19 +672,19 @@ export default function App() {
       <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}>
         {(items || []).map((t) => (
           <div key={t.id} className="bg-surface-muted border border-border rounded p-3 flex flex-col gap-2">
-            <img alt={t.title} src={t.thumbnail || 'https://via.placeholder.com/300x200/4a9eff/ffffff?text=♫'} className="w-full h-36 object-cover rounded" />
+            <img alt={t.title} src={t.thumbnail || '/assets/icons/celes-star.png'} className="w-full h-36 object-cover rounded bg-surface-muted" />
             <div className="text-sm font-medium line-clamp-2">{t.title}</div>
             <div className="text-xs text-muted-foreground">{t.artist} • {t.platform}</div>
             <div className="flex items-center justify-between mt-1">
               <Button className="flex-1" onClick={() => doPlay(t)}>Play</Button>
               <span className="flex items-center gap-2 ml-2">
                 <button className="p-1 hover:text-primary" title="Add to queue" onClick={() => addToQueue(t)}><ListPlus size={16}/></button>
-                <button className="p-1 hover:text-primary" aria-label="Like" title="Like" onClick={async () => { const id = await persistTrack(t); if (id) { await window.electronAPI.toggleLikeSong?.(id); /* optional: toast */ } }}><Heart size={16}/></button>
+                <button className={`p-1 ${likedSet.has(keyForTrack(t))? 'text-primary' : 'hover:text-primary'}`} aria-label="Like" title="Like" onClick={async () => { const id = await persistTrack(t); if (id) { const res = await window.electronAPI.toggleLikeSong?.(id); const isLiked = !!res?.isLiked; setLikedSet(prev=>{ const next = new Set(Array.from(prev)); const k=keyForTrack(t); if (isLiked) next.add(k); else next.delete(k); try{ localStorage.setItem('celes.likedSet', JSON.stringify(Array.from(next))) }catch{}; return next }); await reloadPlaylists(); } }}><Heart size={16}/></button>
                 <button className="p-1 hover:text-primary" title="Add to playlist" onClick={async () => {
                   let pid = activePlaylistId
                   if (!pid || !playlists.find(p=>p.id===pid)) {
                     const names = playlists.map((p, i) => `${i+1}. ${p.name}`)
-                    const choice = prompt(`Add to which playlist?\n${names.join('\n')}\nOr type a new name:`)
+                   const choice = window.prompt?.(`Add to which playlist?\n${names.join('\n')}\nOr type a new name:`)
                     if (!choice) return
                     const idx = Number(choice)-1
                     if (Number.isInteger(idx) && idx >= 0 && idx < playlists.length) pid = playlists[idx].id
@@ -812,7 +814,7 @@ export default function App() {
     const commands = [
       {name:'Go Home', run:()=>setView('home')},
       {name:'Open Search', run:()=>setView('search')},
-      {name:'New Playlist', run:()=>{ const n=prompt('New playlist name','My Playlist'); if(n) createPlaylist(n)}},
+       {name:'New Playlist', run:()=>{ const n=window.prompt?.('New playlist name','My Playlist'); if(n) createPlaylist(n)}},
       {name:'Toggle Theme Panel', run:()=>setThemeOpen(v=>!v)},
       {name:'Open Liked Songs', run:()=>{ const liked=playlists.find(p=>p.name==='Liked Songs'); if(liked) setActivePlaylistId(liked.id); }}
     ]
@@ -852,7 +854,7 @@ export default function App() {
             // Download full library: stream songs only (not already downloaded)
             const all = await window.electronAPI.getStreamingSongs?.()
             const settings = await window.electronAPI.getSettings?.()||{}
-            const targetDir = settings.downloadDir || prompt('Download folder')
+            const targetDir = settings.downloadDir || window.prompt?.('Download folder')
             if (!targetDir) return
             let count=0
             for (const t of (all||[])){
@@ -924,7 +926,7 @@ export default function App() {
             <div className="mb-1">Download folder</div>
             <div className="flex gap-2">
               <input className="flex-1 bg-surface-muted border border-border rounded px-2 py-1" value={downloadDir} onChange={(e)=>setDownloadDir(e.target.value)} />
-              <Button variant="ghost" onClick={async ()=>{ const dir = prompt('Set download folder', downloadDir || '/Users/'+(navigator.userAgent.includes('Mac')?'eoinfr':'')+'/Music/Celes'); if(dir){ setDownloadDir(dir); await persistSettings({ ...(await window.electronAPI.getSettings?.()||{}), autoDownloadLiked, downloadDir: dir }) } }}>Choose</Button>
+              <Button variant="ghost" onClick={async ()=>{ const dir = window.prompt?.('Set download folder', downloadDir || '/Users/'+(navigator.userAgent.includes('Mac')?'eoinfr':'')+'/Music/Celes'); if(dir){ setDownloadDir(dir); await persistSettings({ ...(await window.electronAPI.getSettings?.()||{}), autoDownloadLiked, downloadDir: dir }) } }}>Choose</Button>
             </div>
           </div>
         </div>
@@ -950,7 +952,7 @@ export default function App() {
       }
       if (candidates.length===0) { alert('Nothing to download') ; return }
       const settings = await window.electronAPI.getSettings?.()||{}
-      const target = settings.downloadDir || prompt('Download folder')
+      const target = settings.downloadDir || window.prompt?.('Download folder')
       if (!target) return
       const payload = candidates.map(t=>({ id: t.stream_id||t.id, stream_id: String(t.stream_id||t.id), platform: t.platform||'youtube', title: t.title, artist: t.artist, streamUrl: t.stream_url||t.streamUrl }))
       await window.electronAPI.downloadQueueAdd?.(payload, target)
@@ -1054,7 +1056,7 @@ export default function App() {
                             let pid = activePlaylistId
                             if (!pid || !playlists.find(p=>p.id===pid)) {
                               const names = playlists.map((p, i) => `${i+1}. ${p.name}`)
-                              const choice = prompt(`Add to which playlist?\n${names.join('\n')}\nOr type a new name:`)
+                               const choice = window.prompt?.(`Add to which playlist?\n${names.join('\n')}\nOr type a new name:`)
                               if (!choice) return
                               const idx = Number(choice)-1
                               if (Number.isInteger(idx) && idx >= 0 && idx < playlists.length) pid = playlists[idx].id
@@ -1076,7 +1078,7 @@ export default function App() {
                           let pid = activePlaylistId
                           if (!pid || !playlists.find(p=>p.id===pid)) {
                             const names = playlists.map((p, i) => `${i+1}. ${p.name}`)
-                            const choice = prompt(`Add to which playlist?\n${names.join('\n')}\nOr type a new name:`)
+                           const choice = window.prompt?.(`Add to which playlist?\n${names.join('\n')}\nOr type a new name:`)
                             if (!choice) return
                             const idx = Number(choice)-1
                             if (Number.isInteger(idx) && idx >= 0 && idx < playlists.length) pid = playlists[idx].id
@@ -1123,7 +1125,7 @@ export default function App() {
               <div className="text-sm font-semibold mb-2">Playlists</div>
               <div className="flex gap-2 mb-2">
                 <Button onClick={() => {
-                  const n = prompt('New playlist name', `Playlist ${playlists.length+1}`)
+                  const n = window.prompt?.('New playlist name', `Playlist ${playlists.length+1}`)
                   if (n && n.trim()) createPlaylist(n.trim())
                 }}>New</Button>
                 {activePlaylist && activePlaylist.type !== 'system' && (
@@ -1157,7 +1159,7 @@ export default function App() {
                         <Button variant="ghost" onClick={async () => { queuePlaylistDownload(p, true) }}>Download Missing</Button>
                         {p.type !== 'system' && (
                           <>
-                            <Button variant="ghost" onClick={() => { const n = prompt('Rename playlist', p.name); if (n && n.trim()) renamePlaylist(p.id, n.trim()) }}>Rename</Button>
+                             <Button variant="ghost" onClick={() => { const n = window.prompt?.('Rename playlist', p.name); if (n && n.trim()) renamePlaylist(p.id, n.trim()) }}>Rename</Button>
                             <Button variant="ghost" onClick={() => {
                               const inp = document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.onchange = async (e) => { const f = e.target.files?.[0]; if (!f) return; const reader = new FileReader(); reader.onload = () => setPlaylistCover(p.id, reader.result); reader.readAsDataURL(f); }; inp.click();
                             }}>Cover</Button>
@@ -1171,7 +1173,7 @@ export default function App() {
                         {(p.songs?.length || 0) === 0 && <div className="text-xs text-muted-foreground">No tracks yet</div>}
                          {(p.songs || []).map((t, idx) => (
                           <div key={`${t.id}_${idx}`} className="text-xs flex items-center gap-2">
-                             <img src={t.thumbnail_url || t.thumbnail || 'https://via.placeholder.com/28'} className="w-7 h-7 rounded object-cover"/>
+                   <img src={t.thumbnail_url || t.thumbnail || '/assets/icons/celes-star.png'} className="w-7 h-7 rounded object-cover bg-surface-muted"/>
                             <div className="flex-1 truncate">{t.title}</div>
                              <div className="flex items-center gap-1">
                                <Button variant="ghost" onClick={() => doPlay({ ...t, platform: t.platform || (t.type === 'stream' ? t.platform : 'internetarchive') })}>Play</Button>
