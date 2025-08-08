@@ -161,6 +161,9 @@ class StreamingService extends BaseStreamingService {
     return super.searchMusic(query, platform, limit);
   }
 
+  // Explicitly shadow base SC search to fully silence SC logging and retries
+  async searchSoundCloud(_query, _limit) { return [] }
+
   async getYouTubeStreamUrlViaPiped(videoId) {
     const instances = [
       'https://pipedapi.kavin.rocks',
@@ -718,27 +721,28 @@ class StreamingService extends BaseStreamingService {
 
   // Top charts helpers
   async getYouTubeTop(limit = 50) {
+    // Prefer YouTube Charts page via Piped endpoint
     const instances = [
+      'https://piped.projectsegfau.lt',
       'https://pipedapi.kavin.rocks',
       'https://piped.video',
-      'https://piped.projectsegfau.lt',
     ];
     for (const base of instances) {
       try {
-        const json = await this.doJsonGet(`${base}/trending`, 12000);
-        const items = Array.isArray(json) ? json : (json && (json.items || json.videos)) || [];
+        // charts endpoint is not standard across instances; fallback to trending/music
+        const charts = await this.doJsonGet(`${base}/trending?region=US&category=music`, 12000).catch(()=>null);
+        const items = Array.isArray(charts) ? charts : (charts && (charts.items || charts.videos)) || [];
         const results = [];
         for (const it of items) {
-          const vid = it.id || it.url || it.videoId || null;
-          const id = typeof vid === 'string' && vid.length === 11 ? vid : (it?.url?.split('watch?v=')[1] || null);
-          if (!id) continue;
+          const id = (it.id && String(it.id).length===11)? it.id : (it.url && it.url.split('watch?v=')[1]) || (it.videoId) || null;
+          if (!id || String(id).length!==11) continue;
           results.push({
-            id,
+            id: String(id).slice(0,11),
             title: it.title || 'YouTube',
             artist: it.uploaderName || it.uploader || 'YouTube',
             duration: Number(it.duration) || 0,
             thumbnail: it.thumbnail || (it.thumbnails && it.thumbnails[0]) || '',
-            url: `https://www.youtube.com/watch?v=${id}`,
+            url: `https://www.youtube.com/watch?v=${String(id).slice(0,11)}`,
             platform: 'youtube',
             type: 'stream',
             streamUrl: null,
@@ -748,17 +752,14 @@ class StreamingService extends BaseStreamingService {
           if (results.length >= limit) break;
         }
         if (results.length) return results;
-      } catch { /* try next instance */ }
+      } catch {}
     }
-    // Fallback: broad trending queries
-    const fallbacks = ['top hits', 'trending songs', 'hot 50 songs', 'music chart'];
-    for (const q of fallbacks) {
-      try {
-        const r = await this.searchYouTubePiped(q, limit);
-        if (r && r.length) return r.slice(0, limit);
-      } catch { /* next */ }
-    }
-    return [];
+    // Fallback to YouTube Charts query
+    try {
+      const r = await this.searchYouTubePiped('US Top 50 songs', limit);
+      if (r && r.length) return r.slice(0, limit);
+    } catch {}
+    return []
   }
 
   async getSoundCloudTop(limit = 50) {
