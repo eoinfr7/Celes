@@ -426,16 +426,16 @@ export default function App() {
   useEffect(() => { if (currentTrack) applyNormalizationForTrack(currentTrack) }, [normalizeOn, targetLufs])
   useEffect(() => {
     setParsedLrc([]); parsedLrcRef.current=[]; setActiveLrcIdx(-1); activeLrcIdxRef.current=-1; setMiniLyric('')
-    if (!currentTrack) return
+    if (!currentTrack || !lyricsEnabled) return
     ;(async()=>{
       try {
         const meta = { artist: currentTrack.artist, title: currentTrack.title, duration: currentTrack.duration }
         const l = await window.electronAPI.getLyricsForTrack?.(meta)
-        if (l?.syncedLyrics){ const arr = parseLrc(l.syncedLyrics); setParsedLrc(arr); parsedLrcRef.current = arr }
-        else { setParsedLrc([]); parsedLrcRef.current=[] }
+        if (l?.syncedLyrics){ const arr = parseLrc(l.syncedLyrics); setParsedLrc(arr); parsedLrcRef.current = arr; setLyricsData(l); if (autoOpenLyrics) setLyricsOpen(true) }
+        else { setLyricsData(l||null); setParsedLrc([]); parsedLrcRef.current=[]; if (autoOpenLyrics && (l?.plainLyrics)) setLyricsOpen(true) }
       } catch {}
     })()
-  }, [currentTrack])
+  }, [currentTrack, lyricsEnabled])
   useEffect(() => {
     const onKey = (e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase()==='k') { e.preventDefault(); setPaletteOpen(v=>!v) } }
     window.addEventListener('keydown', onKey)
@@ -617,6 +617,9 @@ export default function App() {
             <input type="number" step={1} min={-30} max={-8} className="w-full bg-neutral-950 border border-neutral-800 rounded px-2 py-1" value={targetLufs} onChange={(e)=>setTargetLufs(Number(e.target.value)||-14)} />
           </div>
           <div className="flex items-center justify-between"><div>Equalizer</div><input type="checkbox" checked={eqOn} onChange={(e)=>{ setEqOn(e.target.checked); if(e.target.checked) ensureAudioGraph(); }} /></div>
+          <div className="flex items-center justify-between"><div>Lyrics</div><input type="checkbox" checked={lyricsEnabled} onChange={(e)=>{ const v=e.target.checked; setLyricsEnabled(v); try{ localStorage.setItem('celes.lyricsEnabled', String(v)) }catch{} }} /></div>
+          <div className="flex items-center justify-between"><div>Auto open lyrics</div><input type="checkbox" checked={autoOpenLyrics} onChange={(e)=>{ const v=e.target.checked; setAutoOpenLyrics(v); try{ localStorage.setItem('celes.autoOpenLyrics', String(v)) }catch{} }} /></div>
+          <div className="flex items-center justify-between"><div>Show mini lyric</div><input type="checkbox" checked={showMiniLyric} onChange={(e)=>{ const v=e.target.checked; setShowMiniLyric(v); try{ localStorage.setItem('celes.showMiniLyric', String(v)) }catch{} }} /></div>
           <div className="flex gap-2 items-center">
             <div>Preset:</div>
             <select className="bg-neutral-950 border border-neutral-800 rounded px-2 py-1" onChange={(e)=>setEqPreset(e.target.value)}>
@@ -644,6 +647,9 @@ export default function App() {
   const parsedLrcRef = useRef([])
   const activeLrcIdxRef = useRef(-1)
   const [miniLyric, setMiniLyric] = useState('')
+  const [lyricsEnabled, setLyricsEnabled] = useState(()=>{ try { const v = localStorage.getItem('celes.lyricsEnabled'); return v==null? true : v==='true' } catch { return true } })
+  const [autoOpenLyrics, setAutoOpenLyrics] = useState(()=>{ try { const v = localStorage.getItem('celes.autoOpenLyrics'); return v==='true' } catch { return false } })
+  const [showMiniLyric, setShowMiniLyric] = useState(()=>{ try { const v = localStorage.getItem('celes.showMiniLyric'); return v==null? true : v==='true' } catch { return true } })
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 flex">
@@ -879,8 +885,8 @@ export default function App() {
           <div className="hidden md:flex items-center gap-2 w-48 justify-end">
             <button className="p-2 rounded hover:bg-neutral-800" onClick={() => setVolume(v => v > 0 ? 0 : 0.8)} aria-label="Mute">{volume > 0 ? <Volume2 size={18}/> : <VolumeX size={18}/>} </button>
             <input type="range" min={0} max={1} step={0.01} value={volume} onChange={(e) => setVolume(Number(e.target.value))} className="w-32 accent-primary" />
-            {miniLyric && <div className="text-[11px] text-neutral-400 truncate max-w-[220px]">{miniLyric}</div>}
-            <Button variant="ghost" onClick={async()=>{ if(!currentTrack) return; setLyricsOpen(true); setLyricsData({ loading:true }); const meta = { artist: currentTrack.artist, title: currentTrack.title, duration: currentTrack.duration }; const l = await window.electronAPI.getLyricsForTrack?.(meta); setLyricsData(l||{plainLyrics:'No lyrics found'}); }}>Lyrics</Button>
+            {showMiniLyric && miniLyric && <div className="text-[11px] text-neutral-400 truncate max-w-[220px]">{miniLyric}</div>}
+            <Button variant="ghost" onClick={async()=>{ if(!currentTrack) return; setLyricsOpen(v=>!v); if(!lyricsData){ setLyricsData({ loading:true }); const meta = { artist: currentTrack.artist, title: currentTrack.title, duration: currentTrack.duration }; const l = await window.electronAPI.getLyricsForTrack?.(meta); setLyricsData(l||{plainLyrics:'No lyrics found'}); } }}>Lyrics</Button>
           </div>
         </div>
       </div>
