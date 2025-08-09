@@ -76,7 +76,7 @@ npm run build:mac
 npm run build:linux
 ```
 
-## Use it like a pro
+## User guidance
 
 - Space/K: Play/Pause • J/←: -5s • L/→: +5–10s • ↑/↓: volume
 - Click heart to add to `Liked Songs` (and your library)
