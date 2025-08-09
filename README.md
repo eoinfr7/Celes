@@ -29,7 +29,18 @@ Play the internet your way. Celes pairs a drop‑dead‑gorgeous interface with 
 - Dual‑audio crossfade engine for fast, gapless track changes.
 - Lyrics: synced where available, plain‑text fallbacks, smooth highlighting, mini lyric line.
 - Theming: Solarized-by-default plus presets (Light Green, Coral Blue, Silver, Midnight, Lilac). Tweak HSL live.
-- Mini Dock: an in‑app mini player with video/visualizer toggles.
+- Mini Dock: an in‑app mini player with a fast spectrum visualizer and EQ.
+
+## What’s new (since last commit)
+
+- Mini Dock spectrum: stable 2D renderer with theme‑reactive gradient, ridge option, idle baseline at −100 dB
+- EQ modal: interactive bands with draggable handles, Alt/⌘ to change Q, double‑click to reset; band‑colored area fills; glowing response curve
+- Presets: quick Save plus A/B store/recall slots
+- Anti‑zoom: disabled pinch‑zoom and browser zoom shortcuts (window zoom locks, gesture/ctrl+wheel guards)
+- Playlist sidebar: user playlist color tags; cover color setter
+- Dock artwork: better default “no track” icon
+- Streaming: performance/race/caching tweaks for faster starts
+- Misc: stability fixes, keyboard shortcuts, and UI polish
 
 ## Quick start
 
