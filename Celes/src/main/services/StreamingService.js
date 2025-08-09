@@ -10,6 +10,8 @@ class StreamingService extends BaseStreamingService {
     // Default: do NOT cross-platform fallback for streams to avoid mismatched audio sources
     this.fallbackEnabled = false;
     if (!this.searchCache) this.searchCache = new Map();
+    this.streamUrlCache = new Map(); // key -> { url, ts }
+    this.fastLoudness = true; // favor speed over heavy analysis
   }
 
   findCachedTrack(trackId) {
@@ -197,13 +199,12 @@ class StreamingService extends BaseStreamingService {
       'https://piped.video',
       'https://piped.projectsegfau.lt',
     ];
-    for (const base of instances) {
+    const tasks = instances.map(base => (async () => {
       try {
         const url = `${base}/streams/${encodeURIComponent(videoId)}`;
-        const json = await this.doJsonGet(url, 12000);
+        const json = await this.doJsonGet(url, 7000);
         const audios = json && (json.audioStreams || json.audio) || [];
-        if (!Array.isArray(audios) || audios.length === 0) continue;
-        // Prefer opus > m4a and highest bitrate
+        if (!Array.isArray(audios) || audios.length === 0) throw new Error('no audio');
         const sorted = [...audios].sort((a, b) => {
           const codecScore = (s) => /opus/i.test(s || '') ? 3 : (/m4a|mp4a/i.test(s || '') ? 2 : 1);
           const ac = codecScore(a.codec || a.mimeType);
@@ -212,16 +213,41 @@ class StreamingService extends BaseStreamingService {
           return (Number(b.bitrate) || Number(b.quality) || 0) - (Number(a.bitrate) || Number(a.quality) || 0);
         });
         const best = sorted[0];
-        if (best && (best.url || best.link)) {
-          // Some instances return relative link components; ensure absolute
-          const link = best.url || best.link;
-          return link.startsWith('http') ? link : `${base}${link}`;
-        }
-      } catch {
-        // try next instance
-      }
+        if (!best) throw new Error('no stream');
+        const link = best.url || best.link;
+        const abs = link && link.startsWith('http') ? link : (link ? `${base}${link}` : null);
+        if (!abs) throw new Error('bad link');
+        return { base, url: abs };
+      } catch (e) { throw e }
+    })());
+    try {
+      const first = await Promise.any(tasks);
+      // cache preferred instance when it wins
+      if (first?.base) this.pipedPreferred = first.base;
+      return first?.url || null;
+    } catch {
+      return null;
     }
+  }
+
+  // Small helper: Promise with timeout
+  withTimeout(promise, ms = 6500) {
+    return new Promise((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error('timeout')), ms);
+      promise.then((v) => { clearTimeout(t); resolve(v); }).catch((e) => { clearTimeout(t); reject(e); });
+    });
+  }
+
+  readStreamUrlCache(key, ttlMs = 30 * 60 * 1000) {
+    try {
+      const v = this.streamUrlCache.get(key);
+      if (v && (Date.now() - v.ts) < ttlMs && typeof v.url === 'string') return v.url;
+    } catch {}
     return null;
+  }
+
+  writeStreamUrlCache(key, url) {
+    try { if (url) this.streamUrlCache.set(key, { url, ts: Date.now() }); } catch {}
   }
 
   async getYouTubeVideoStreamUrlViaPiped(videoId) {
@@ -339,14 +365,19 @@ class StreamingService extends BaseStreamingService {
     }
     if (platform === 'soundcloud') { return null }
     if (platform === 'youtube' || (typeof trackId === 'string' && /^[a-zA-Z0-9_-]{11}$/.test(trackId))) {
-      // Robust path: try direct ytdl first, then Piped as fallback (some Piped instances fail)
       const vid = typeof trackId === 'string' && trackId.length === 11 ? trackId : String(trackId);
+      const cacheKey = `yt:${vid}`;
+      const cached = this.readStreamUrlCache(cacheKey);
+      if (cached) return cached;
+
+      // Race Piped (fast) with ytdl (robust). Stagger ytdl by a short delay to save CPU when Piped is healthy.
+      const sleep = (ms)=> new Promise(r=>setTimeout(r, ms));
       try {
-        const direct = await super.getStreamUrl(vid, 'youtube');
-        if (direct) return direct;
+        const pipedP = this.withTimeout(this.getYouTubeStreamUrlViaPiped(vid), 5000);
+        const ytdlP = this.withTimeout((async()=>{ await sleep(300); return super.getStreamUrl(vid, 'youtube'); })(), 8000);
+        const first = await Promise.any([pipedP, ytdlP]);
+        if (typeof first === 'string' && first.startsWith('http')) { this.writeStreamUrlCache(cacheKey, first); return first; }
       } catch {}
-      const viaPiped = await this.getYouTubeStreamUrlViaPiped(vid);
-      if (viaPiped) return viaPiped;
       return null;
     }
     return null;
@@ -391,6 +422,9 @@ class StreamingService extends BaseStreamingService {
 
   async getTrackLoudness(trackId, platform = 'youtube', { force = false, ttlMs = 14*24*60*60*1000 } = {}) {
     try {
+      if (this.fastLoudness && !force) {
+        return this.analyzeLoudnessPlaceholder(null);
+      }
       const cachePath = this.getLoudnessCachePath(trackId, platform);
       if (!force && cachePath && fs.existsSync(cachePath)) {
         try {

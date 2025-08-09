@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Heart, Plus, ListPlus } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Heart, Plus, ListPlus, Pencil, Trash2, ChevronRight, ArrowUp, ArrowDown, Download } from 'lucide-react'
 
 const THEMES = [
   // Keep black/dark backgrounds here
@@ -72,6 +72,7 @@ export default function App() {
 
   const [currentTrack, setCurrentTrack] = useState(null)
   const [likedSet, setLikedSet] = useState(()=>{ try { return new Set(JSON.parse(localStorage.getItem('celes.likedSet')||'[]')) } catch { return new Set() } })
+  const [likedSongs, setLikedSongs] = useState([])
   const [isPlaying, setIsPlaying] = useState(false)
   const [progress, setProgress] = useState(0)
   const [duration, setDuration] = useState(0)
@@ -113,12 +114,10 @@ export default function App() {
   const videoRef = useRef(null)
   const [videoUrl, setVideoUrl] = useState(null)
   const [miniDockOn, setMiniDockOn] = useState(() => { try { return localStorage.getItem('celes.miniDockOn') === 'true' } catch { return false } })
-  const [dockVisOn, setDockVisOn] = useState(false)
-  const [dockVideoOn, setDockVideoOn] = useState(false)
-  const dockVideoRef = useRef(null)
-  const [dockVideoUrl, setDockVideoUrl] = useState(null)
-  const [dockVideoId, setDockVideoId] = useState(null)
-  const [dockVideoFailed, setDockVideoFailed] = useState(false)
+  const [dockVisOn, setDockVisOn] = useState(()=>{ try{ return localStorage.getItem('celes.dockVisOn')==='true' }catch{ return false } })
+  // Mini window mode (native window loads app with ?mini=1) – render compact UI and control main via IPC
+  const isMiniMode = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('mini') === '1'
+  const [miniNow, setMiniNow] = useState(null)
 
   function deriveYouTubeId(track){
     try {
@@ -135,6 +134,16 @@ export default function App() {
     } catch { return null }
   }
 
+  function IconButton({ title, children, onClick, className='' }){
+    return (
+      <button title={title}
+              className={`p-2 rounded hover:bg-surface-muted border border-transparent focus-visible:outline-none ${className}`}
+              onClick={onClick}>
+        {children}
+      </button>
+    )
+  }
+
   // WebAudio EQ
   const audioCtxRef = useRef(null)
   const sourceRef = useRef(null)
@@ -143,8 +152,15 @@ export default function App() {
   const filtersRef = useRef([])
   const crossfadeTimerRef = useRef(null)
   const crossfadeGenRef = useRef(0)
-  const [eqOn, setEqOn] = useState(false)
-  const [eqGains, setEqGains] = useState([0,0,0,0,0,0,0,0,0,0])
+  const [eqOn, setEqOn] = useState(()=>{ try{ return localStorage.getItem('celes.eqOn')==='true' }catch{ return false } })
+  const [eqGains, setEqGains] = useState(()=>{ try{ const raw=localStorage.getItem('celes.eqGains'); const arr=raw? JSON.parse(raw): null; return Array.isArray(arr)&&arr.length===10? arr : [0,0,0,0,0,0,0,0,0,0] }catch{ return [0,0,0,0,0,0,0,0,0,0] } })
+  const [eqQ, setEqQ] = useState(()=>{ try{ const raw=localStorage.getItem('celes.eqQ'); const arr=raw? JSON.parse(raw): null; return Array.isArray(arr)&&arr.length===10? arr : new Array(10).fill(1.1) }catch{ return new Array(10).fill(1.1) } })
+  const [eqOpen, setEqOpen] = useState(false)
+  const [eqMode, setEqMode] = useState(()=>{ try{ return localStorage.getItem('celes.eqMode') || 'Expert' }catch{ return 'Expert' } })
+  const [visRidgeOn, setVisRidgeOn] = useState(()=>{ try{ const v = localStorage.getItem('celes.visRidgeOn'); return v==null? true : v==='true' }catch{ return true } })
+  const [visRidgeDecay, setVisRidgeDecay] = useState(()=>{ try{ const v = Number(localStorage.getItem('celes.visRidgeDecay')); return Number.isFinite(v)? v : 0.7 }catch{ return 0.7 } })
+  const [visSlope, setVisSlope] = useState(()=>{ try{ const v = Number(localStorage.getItem('celes.visSlope')); return Number.isFinite(v)? v : 3 }catch{ return 3 } })
+  const [visSmooth, setVisSmooth] = useState(()=>{ try{ const v = Number(localStorage.getItem('celes.visSmooth')); return Number.isFinite(v)? v : 2 }catch{ return 2 } })
   const EQ_BANDS = [60, 120, 250, 500, 1000, 2000, 4000, 8000, 12000, 16000]
   const EQ_PRESETS = {
     Flat: [0,0,0,0,0,0,0,0,0,0],
@@ -161,7 +177,7 @@ export default function App() {
     const src = ctx.createMediaElementSource(el)
     const norm = ctx.createGain();
     norm.gain.value = 1
-    const filters = EQ_BANDS.map((freq)=>{ const f=ctx.createBiquadFilter(); f.type='peaking'; f.frequency.value=freq; f.Q.value=1.1; f.gain.value=0; return f })
+    const filters = EQ_BANDS.map((freq, i)=>{ const f=ctx.createBiquadFilter(); f.type='peaking'; f.frequency.value=freq; f.Q.value=Number(eqQ[i]||1.1); f.gain.value=Number(eqGains[i]||0); return f })
     // chain: src -> norm -> filters... -> dest
     src.connect(norm)
     norm.connect(filters[0])
@@ -169,11 +185,14 @@ export default function App() {
     const last = filters[filters.length-1]
     last.connect(ctx.destination)
     // visualizer analyser (tap)
-    const analyser = ctx.createAnalyser()
-    analyser.fftSize = 2048
+    let analyser = analyserRef.current
+    if (!analyser) {
+      analyser = ctx.createAnalyser()
+      analyserRef.current = analyser
+    }
+    analyser.fftSize = 4096
     analyser.smoothingTimeConstant = 0.85
     last.connect(analyser)
-    analyserRef.current = analyser
     sourceRef.current = src
     normalizeGainRef.current = norm
     filtersRef.current = filters
@@ -199,7 +218,44 @@ export default function App() {
 
   function applyEqGains(gains){
     filtersRef.current.forEach((f,i)=>{ try{ f.gain.value = gains[i]||0 }catch{}})
+    try{ localStorage.setItem('celes.eqGains', JSON.stringify(gains)) }catch{}
   }
+
+  function applyEqQ(qs){
+    filtersRef.current.forEach((f,i)=>{ try{ f.Q.value = qs[i]||1.1 }catch{}})
+    try{ localStorage.setItem('celes.eqQ', JSON.stringify(qs)) }catch{}
+  }
+
+  // Preset save/A-B slots in local storage for quick auditioning
+  const [presetName, setPresetName] = useState(()=>{ try { return localStorage.getItem('celes.eqPresetName') || 'Custom' } catch { return 'Custom' } })
+  function saveCurrentPreset(name){
+    try {
+      localStorage.setItem('celes.eqPresetName', name||'Custom')
+      localStorage.setItem('celes.eqPresetGains', JSON.stringify(eqGains))
+      localStorage.setItem('celes.eqPresetQ', JSON.stringify(eqQ))
+      setPresetName(name||'Custom')
+    } catch {}
+  }
+  function recallPreset(slot){
+    try {
+      const g = JSON.parse(localStorage.getItem(`celes.eqAB_${slot}_g`)||'[]')
+      const q = JSON.parse(localStorage.getItem(`celes.eqAB_${slot}_q`)||'[]')
+      if (Array.isArray(g) && g.length===10) { setEqGains(g); applyEqGains(g) }
+      if (Array.isArray(q) && q.length===10) { setEqQ(q); applyEqQ(q) }
+    } catch {}
+  }
+  function storePreset(slot){
+    try { localStorage.setItem(`celes.eqAB_${slot}_g`, JSON.stringify(eqGains)); localStorage.setItem(`celes.eqAB_${slot}_q`, JSON.stringify(eqQ)) } catch {}
+  }
+
+  // Apply/clear EQ when toggled
+  useEffect(()=>{
+    try{
+      if (!audioCtxRef.current || !filtersRef.current?.length) ensureAudioGraph()
+      if (eqOn) applyEqGains(eqGains)
+      else applyEqGains(new Array(10).fill(0))
+    }catch{}
+  }, [eqOn])
 
   function parseLrc(lrc){
     try {
@@ -387,11 +443,11 @@ export default function App() {
       const result = await window.electronAPI.getStreamUrlWithFallback(track.id, prefPlat).catch(() => null)
       if (result?.streamUrl) src = toProxy(result.streamUrl)
     }
-    // Intelligent fallback: if primary resolution failed, try re-searching by title+artist and pick first playable
+    // Intelligent fallback: if primary resolution failed, try re-searching quickly by title+artist and pick first playable (short-circuited)
     if (!src) {
       try {
         const q = [track.artist, track.title].filter(Boolean).join(' ')
-        const alts = await window.electronAPI.searchMusicWithFallback(q, 'youtube', 5)
+        const alts = await window.electronAPI.searchMusicWithFallback(q, 'youtube', 3)
         if (Array.isArray(alts)) {
           for (const cand of alts) {
             const got = await window.electronAPI.getStreamUrlWithFallback(cand.id, cand.platform||'youtube').catch(()=>null)
@@ -446,9 +502,40 @@ export default function App() {
   }
 
   async function createPlaylist(name) {
-    const res = await window.electronAPI.createPlaylist?.(name)
+    try {
+      const existing = new Set((playlists||[]).map(p=> (p.name||'').toLowerCase()))
+      let base = String(name||'').trim() || `Playlist ${playlists.length+1}`
+      let attempt = base
+      let i = 2
+      while (existing.has(attempt.toLowerCase())) { attempt = `${base} ${i++}` }
+      let res = await window.electronAPI.createPlaylist?.(attempt)
+      if (!res?.playlistId && res?.error) {
+        // One more fallback with timestamp to guarantee uniqueness
+        attempt = `${base} ${Date.now()%100000}`
+        res = await window.electronAPI.createPlaylist?.(attempt)
+      }
     await reloadPlaylists();
-    if (res?.playlistId) setActivePlaylistId(res.playlistId)
+      let pid = res?.playlistId || null
+      if (!pid) {
+        // Resolve by name if IPC didn't return id
+        const fresh = await window.electronAPI.getPlaylists?.()
+        const found = (fresh||[]).find(p=> String(p.name).toLowerCase() === attempt.toLowerCase())
+        if (found?.id) pid = found.id
+      }
+      if (pid) {
+        // Optimistically reflect in UI immediately
+        setPlaylists(prev => {
+          const exists = (prev||[]).some(p=> p.id === pid)
+          if (exists) return prev
+          return [...(prev||[]), { id: pid, name: attempt, type: 'user', songs: [] }]
+        })
+        setActivePlaylistId(pid)
+        setView('playlist')
+      }
+      return res
+    } catch {
+      return { success:false }
+    }
   }
 
   async function renamePlaylist(playlistId, newName) {
@@ -516,7 +603,7 @@ export default function App() {
     const q = queue
     if (!q || q.length === 0) { setIsPlaying(false); return }
     isSwitchingRef.current = true
-    const [next, ...rest] = q
+      const [next, ...rest] = q
     setQueue(rest)
     // Preempt: bump generation to cancel any in-flight fades and start fresh
     crossfadeGenRef.current++
@@ -532,6 +619,17 @@ export default function App() {
   }
 
   function togglePlayPause() {
+    // If nothing is loaded, don't try to play the empty element. If we have a queue, start it.
+    const hasTrack = !!currentTrackRef.current
+    const q = queueRef.current || []
+    if (!hasTrack) {
+      if (q.length > 0) {
+        const [next, ...rest] = q
+        setQueue(rest)
+        void doPlay(next, { fadeMs: 150 })
+      }
+      return
+    }
     const audio = audioRef.current
     if (!audio) return
     if (audio.paused) { audio.play().then(() => setIsPlaying(true)).catch(() => {}) } else { audio.pause(); setIsPlaying(false) }
@@ -543,10 +641,12 @@ export default function App() {
   useEffect(() => {
     const onReady = () => { if (view === 'home') loadHome() }
     try { window.electronAPI?.onHandlersReady?.(onReady) } catch {}
+    // Prevent accidental zoom/scroll-zoom that causes sluggish canvas perf
+    try { window.electronAPI.lockZoom?.() } catch {}
     return () => { /* ipc listener cleaned by Electron on reload */ }
   }, [view])
   useEffect(() => { reloadPlaylists() }, [])
-  useEffect(() => { (async()=>{ try { const liked = await window.electronAPI.getLikedSongs?.(); if (Array.isArray(liked)) { const keys = liked.map(t=> `${t.platform||'youtube'}:${String(t.stream_id||t.id)}`); setLikedSet(new Set(keys)); try{ localStorage.setItem('celes.likedSet', JSON.stringify(keys)) }catch{} } } catch {} })() }, [])
+  useEffect(() => { (async()=>{ try { const liked = await window.electronAPI.getLikedSongs?.(); if (Array.isArray(liked)) { setLikedSongs(liked); const keys = liked.map(t=> `${t.platform||'youtube'}:${String(t.stream_id||t.id)}`); setLikedSet(new Set(keys)); try{ localStorage.setItem('celes.likedSet', JSON.stringify(keys)) }catch{} } } catch {} })() }, [])
 
   useEffect(() => {
     queueRef.current = queue
@@ -602,6 +702,50 @@ export default function App() {
 
   useEffect(() => { try { localStorage.setItem('celes.volume', String(volume)) } catch {} ; try { if (audioRef.current) audioRef.current.volume = volume } catch {}; try { if (nextAudioRef.current) nextAudioRef.current.volume = volume } catch {} }, [volume])
   useEffect(() => { window.electronAPI.streamingHealthCheck?.() }, [])
+  // Register global media keys so hardware keys work even when window is hidden
+  useEffect(() => {
+    try { window.electronAPI.registerMediaKeys?.() } catch {}
+    return () => { try { window.electronAPI.unregisterMediaKeys?.() } catch {} }
+  }, [])
+
+  // System media controls (Media Session API)
+  useEffect(() => {
+    try {
+      if (!('mediaSession' in navigator)) return
+      const ms = navigator.mediaSession
+      const setMeta = () => {
+        try {
+          const artwork = currentTrack?.thumbnail ? [{ src: currentTrack.thumbnail, sizes: '512x512', type: 'image/png' }] : []
+          ms.metadata = new window.MediaMetadata({
+            title: currentTrack?.title || 'Celes',
+            artist: currentTrack?.artist || '',
+            album: 'Celes',
+            artwork,
+          })
+        } catch {}
+      }
+      setMeta()
+      ms.setActionHandler?.('play', () => { try { const el=getActiveEl(); if(el&&el.paused){ el.play().then(()=>setIsPlaying(true)).catch(()=>{}) } } catch {} })
+      ms.setActionHandler?.('pause', () => { try { const el=getActiveEl(); if(el&&!el.paused){ el.pause(); setIsPlaying(false) } } catch {} })
+      ms.setActionHandler?.('previoustrack', () => { try { previousOrRestart() } catch {} })
+      ms.setActionHandler?.('nexttrack', () => { try { nextFromQueue() } catch {} })
+      ms.setActionHandler?.('seekto', (e) => { try { const el = getActiveEl(); if (el && e.seekTime != null) { el.currentTime = Math.max(0, Math.min(el.duration||0, e.seekTime)); } } catch {} })
+    } catch {}
+  }, [currentTrack])
+
+  // Keep OS position state fresh for scrubbing on control center/SMTC
+  useEffect(() => {
+    try {
+      if (!('mediaSession' in navigator)) return
+      const ms = navigator.mediaSession
+      const el = getActiveEl()
+      if (!el) return
+      ms.playbackState = isPlaying ? 'playing' : 'paused'
+      if (Number.isFinite(duration)) {
+        ms.setPositionState?.({ duration: Number(duration)||0, playbackRate: el.playbackRate||1, position: Number(progress)||0 })
+      }
+    } catch {}
+  }, [isPlaying, progress, duration, activeSide])
   useEffect(() => { try { localStorage.setItem('celes.miniDockOn', String(miniDockOn)) } catch {} }, [miniDockOn])
   // High-frequency lyrics sync to reduce perceived lag
   useEffect(() => {
@@ -623,7 +767,13 @@ export default function App() {
         if (!payload || typeof payload !== 'object') return
         if (payload.type === 'toggle-play') { togglePlayPause() }
         if (payload.type === 'next') { nextFromQueue() }
-        if (payload.type === 'previous') { /* optional: implement */ }
+        if (payload.type === 'previous') { previousOrRestart() }
+        if (payload.type === 'seek' && payload.args && typeof payload.args.time === 'number') {
+          const el = getActiveEl(); if (el) { try { el.currentTime = Math.max(0, Math.min((el.duration||0), payload.args.time)) } catch {} }
+        }
+        if (payload.type === 'set-volume' && payload.args && typeof payload.args.volume === 'number') {
+          const v = Math.max(0, Math.min(1, payload.args.volume)); setVolume(v)
+        }
       } catch {}
     }
     window.electronAPI?.onRendererCommand?.(onCmd)
@@ -671,35 +821,368 @@ export default function App() {
     draw()
     return ()=>{ cancelAnimationFrame(raf); window.removeEventListener('resize', onRes) }
   }, [theaterOn])
-  // Visualizer for Dock
+  // Dock Spectrum 2D Canvas visualizer (stable baseline) – we'll upgrade shader polish after
   useEffect(()=>{
     if (!dockVisOn) return
     let raf = 0
     const canvas = document.getElementById('dock-vis')
     const analyser = analyserRef.current
     if (!canvas || !analyser) return
-    const ctx2d = canvas.getContext('2d')
+    const ctx = canvas.getContext('2d')
     const dpr = window.devicePixelRatio || 1
     const resize = ()=>{ canvas.width = canvas.clientWidth*dpr; canvas.height = canvas.clientHeight*dpr }
     resize(); const onRes=()=>resize(); window.addEventListener('resize', onRes)
-    const data = new Uint8Array(analyser.frequencyBinCount)
+    analyser.fftSize = 4096
+    const freqBins = analyser.frequencyBinCount
+    const data = new Uint8Array(freqBins)
+    // Cache log mapping
+    const minHz = 20, maxHz = 20000
+    const nyquist = (audioCtxRef.current?.sampleRate||44100)/2
+    const hzPerBin = nyquist / freqBins
+    const logX = (hz)=> Math.log10(hz/minHz) / Math.log10(maxHz/minHz)
+    const toDb = (v)=> 20 * Math.log10(Math.max(1e-4, v/255))
+    const gridDb = [-12,-24,-36,-48,-60,-72,-84,-96]
+    // Theme-driven color palette
+    const root = getComputedStyle(document.documentElement)
+    const primaryRaw = root.getPropertyValue('--primary').trim() || '265 89% 78%'
+    const [ph] = primaryRaw.split(/\s+/)
+    const baseHue = Number(ph)||265
+    const lineGrad = ctx.createLinearGradient(0,0,canvas.width,0)
+    const hueSteps = [baseHue-40, baseHue-10, baseHue+15, baseHue+40, baseHue+65]
+    ;[0,0.25,0.5,0.75,1].forEach((stop,i)=>{
+      const h = ((hueSteps[i]%360)+360)%360
+      lineGrad.addColorStop(stop, `hsla(${h} 100% 75% / 0.95)`)
+    })
+    const fillGrad = ctx.createLinearGradient(0,0,0,canvas.height)
+    fillGrad.addColorStop(0, `hsla(${baseHue} 98% 70% / 0.35)`)
+    fillGrad.addColorStop(1, `hsla(${baseHue} 90% 55% / 0.06)`)
+    let hoverX = -1
+    const onMove = (e)=>{ const rect = canvas.getBoundingClientRect(); hoverX = (e.clientX - rect.left) * dpr }
+    const onLeave = ()=>{ hoverX = -1 }
+    canvas.addEventListener('mousemove', onMove)
+    canvas.addEventListener('mouseleave', onLeave)
+    // peak-hold ridge
+    let peakHold = new Float32Array(canvas.width).fill(Number.POSITIVE_INFINITY)
+    const decay = visRidgeDecay // px per frame downward
+    const slopeDbPerOct = isPlaying ? visSlope : 0 // tilt only when playing
+    function yForDb(db){ return canvas.height * (1 - (Math.min(0, db)+100)/100) }
     const draw = ()=>{
       raf = requestAnimationFrame(draw)
       analyser.getByteFrequencyData(data)
-      ctx2d.clearRect(0,0,canvas.width, canvas.height)
-      const bars = 64
-      const step = Math.floor(data.length/bars)
-      const w = canvas.width/bars
-      for (let i=0;i<bars;i++){
-        const v = data[i*step]/255
-        const h = v * canvas.height*0.6
-        ctx2d.fillStyle = `hsl(210 90% ${Math.round(30+v*50)}%)`
-        ctx2d.fillRect(i*w, canvas.height-h, w*0.8, h)
+      ctx.clearRect(0,0,canvas.width, canvas.height)
+      // background grid
+      ctx.save()
+      ctx.strokeStyle = 'rgba(255,255,255,0.07)'
+      ctx.lineWidth = 1
+      for (const db of gridDb){
+        const y = yForDb(db)
+        ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(canvas.width,y); ctx.stroke()
+      }
+      const decade = [20,50,100,200,500,1000,2000,5000,10000,20000]
+      for (const hz of decade){
+        const x = Math.round(logX(hz) * canvas.width)
+        ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,canvas.height); ctx.stroke()
+      }
+      ctx.restore()
+      // spectrum path
+      const path = new Path2D()
+      const baseY = canvas.height
+      path.moveTo(0, baseY)
+      const binsPerPx = []
+      const smoothWindow = Math.max(0, Math.round(visSmooth)) // bins on each side
+      for (let px=0; px<canvas.width; px++){
+        const hz = minHz * Math.pow(10, (px/canvas.width) * Math.log10(maxHz/minHz))
+        const bin = Math.min(freqBins-1, Math.max(0, Math.round(hz / hzPerBin)))
+        binsPerPx[px] = bin
+        // smoothing
+        let sum=0; let count=0
+        for (let k=-smoothWindow;k<=smoothWindow;k++){ const idx=Math.min(freqBins-1, Math.max(0, bin+k)); sum+=data[idx]; count++ }
+        const v = sum/count
+        // slope compensation (approx per oct)
+        const oct = Math.log2(hz/minHz)
+        let db = isPlaying ? (toDb(v) + slopeDbPerOct*oct*-1) : -100
+        const y = yForDb(db)
+        if (px===0) path.lineTo(px, y)
+        else path.lineTo(px, y)
+        // update peak hold ridge
+        if (isPlaying){
+          const current = y
+          const prev = peakHold[px]
+          peakHold[px] = Math.min(current, (prev===Number.POSITIVE_INFINITY? current : prev + decay))
+        } else {
+          peakHold[px] = yForDb(-100)
+        }
+      }
+      path.lineTo(canvas.width, baseY)
+      path.closePath()
+      ctx.fillStyle = fillGrad
+      ctx.fill(path)
+      ctx.strokeStyle = lineGrad
+      ctx.lineWidth = 2.2
+      ctx.shadowColor = 'rgba(0,0,0,0.0)'
+      ctx.stroke(path)
+      ctx.shadowBlur = 0
+      // ridge line
+      if (visRidgeOn && isPlaying){
+        ctx.beginPath()
+        for (let px=0; px<canvas.width; px++){
+          const y = peakHold[px]
+          if (px===0) ctx.moveTo(px, y)
+          else ctx.lineTo(px, y)
+        }
+        ctx.strokeStyle = 'rgba(255,255,255,0.25)'
+        ctx.lineWidth = 1
+        ctx.stroke()
+      }
+      // hover crosshair + tooltip
+      if (hoverX>=0){
+        const px = Math.max(0, Math.min(canvas.width-1, Math.round(hoverX)))
+        const hz = minHz * Math.pow(10, (px/canvas.width) * Math.log10(maxHz/minHz))
+        const bin = binsPerPx[px]
+        const v = data[bin]
+        let db = toDb(v)
+        const oct = Math.log2(hz/minHz)
+        db += slopeDbPerOct*oct*-1
+        const y = yForDb(db)
+        ctx.save()
+        ctx.strokeStyle='rgba(255,255,255,0.15)'
+        ctx.beginPath(); ctx.moveTo(px,0); ctx.lineTo(px,canvas.height); ctx.stroke()
+        ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(canvas.width,y); ctx.stroke()
+        // tooltip
+        const label = `${hz<1000? hz.toFixed(1)+' Hz' : (hz/1000).toFixed(2)+' kHz'}  ${db.toFixed(1)} dB`
+        ctx.font = `${12*dpr}px ui-sans-serif,system-ui`;
+        const tw = ctx.measureText(label).width + 10*dpr
+        const th = 18*dpr
+        const tx = Math.min(px+8*dpr, canvas.width - tw - 4*dpr)
+        const ty = Math.max(4*dpr, y - th - 6*dpr)
+        ctx.fillStyle = 'rgba(17,17,27,0.92)'
+        ctx.strokeStyle = 'rgba(255,255,255,0.15)'
+        ctx.lineWidth = 1
+        ctx.beginPath(); ctx.roundRect(tx,ty,tw,th,4*dpr); ctx.fill(); ctx.stroke()
+        ctx.fillStyle = 'rgba(255,255,255,0.9)'
+        ctx.fillText(label, tx+5*dpr, ty+12*dpr)
+        ctx.restore()
       }
     }
     draw()
-    return ()=>{ cancelAnimationFrame(raf); window.removeEventListener('resize', onRes) }
-  }, [dockVisOn])
+    return ()=>{ cancelAnimationFrame(raf); window.removeEventListener('resize', onRes); canvas.removeEventListener('mousemove', onMove); canvas.removeEventListener('mouseleave', onLeave) }
+  }, [dockVisOn, visRidgeOn, visRidgeDecay, visSlope, visSmooth, isPlaying])
+
+  // EQ canvas: live spectrum + EQ response + draggable band handles, theme-reactive
+  useEffect(()=>{
+    if (!eqOpen) return
+    ensureAudioGraph()
+    const canvas = document.getElementById('eq-curve')
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    const dpr = window.devicePixelRatio || 1
+    const resize = ()=>{ canvas.width = canvas.clientWidth*dpr; canvas.height = canvas.clientHeight*dpr }
+    resize(); const onRes=()=>resize(); window.addEventListener('resize', onRes)
+    const analyser = analyserRef.current
+    if (analyser) { analyser.fftSize = 4096 }
+    const minHz=32, maxHz=20000
+    const toX = (hz, w)=> Math.log10(hz/minHz)/Math.log10(maxHz/minHz) * w
+    const toDbY = (db, h)=> {
+      const y = h * (0.5 - db/30)
+      return Math.max(0, Math.min(h, y))
+    }
+    const width = ()=> canvas.width, height=()=> canvas.height
+    // Theme palette
+    const root = getComputedStyle(document.documentElement)
+    const primaryRaw = root.getPropertyValue('--primary').trim() || '265 89% 78%'
+    const [ph] = primaryRaw.split(/\s+/)
+    const baseHue = Number(ph)||265
+    const bandHues = EQ_BANDS.map((_,i)=> ((baseHue - 40) + i*12)%360 )
+    canvas.style.touchAction = 'none'
+    // Block ctrl+wheel zoom and smart gestures while EQ is open
+    const guardWheel = (e)=>{ if (e.ctrlKey || e.metaKey) { e.preventDefault(); e.stopPropagation() } }
+    const guardGesture = (e)=>{ e.preventDefault(); e.stopPropagation() }
+    const guardDouble = (e)=>{ if (e.detail > 1) { e.preventDefault(); e.stopPropagation() } }
+    const guardKeys = (e)=>{ const k=e.key; if (e.metaKey && (k==='=' || k==='+' || k==='-' || k==='0')) { e.preventDefault(); e.stopPropagation() } }
+    document.addEventListener('wheel', guardWheel, true)
+    window.addEventListener('gesturestart', guardGesture, false)
+    window.addEventListener('gesturechange', guardGesture, false)
+    window.addEventListener('gestureend', guardGesture, false)
+    window.addEventListener('mousedown', guardDouble, true)
+    window.addEventListener('keydown', guardKeys, true)
+    const prevSelect = document.body.style.userSelect; document.body.style.userSelect='none'
+    let raf=0
+    // Dragging state
+    const drag = { idx: -1, mode: 'gain' }
+    const getBandPoint = (i)=>({ x: toX(EQ_BANDS[i], width()), y: toDbY(eqGains[i]||0, height()) })
+    const onDown = (e)=>{
+      e.preventDefault()
+      const rect = canvas.getBoundingClientRect()
+      const px = (e.clientX - rect.left)*dpr
+      const py = (e.clientY - rect.top)*dpr
+      // nearest band
+      let best=-1, bestD=1e9
+      for (let i=0;i<EQ_BANDS.length;i++){
+        const p = getBandPoint(i)
+        const d = Math.hypot(p.x-px, p.y-py)
+        if (d<bestD){ bestD=d; best=i }
+      }
+      if (best>=0){ 
+        drag.idx = best; drag.mode = (e.altKey||e.metaKey)? 'q' : 'gain';
+        drag.lastY = py;
+        try { canvas.setPointerCapture?.(e.pointerId) } catch {}
+      }
+    }
+    const onMove = (e)=>{
+      if (drag.idx<0) return
+      e.preventDefault(); e.stopPropagation()
+      const rect = canvas.getBoundingClientRect()
+      const py = (e.clientY - rect.top)*dpr
+      if (drag.mode==='gain'){
+        let db = (0.5 - (py/height()))*30
+        db = Math.max(-12, Math.min(12, db))
+        const g=[...eqGains]; g[drag.idx]=db; setEqGains(g); applyEqGains(g)
+      } else {
+        // Q adjust via relative vertical delta for stability
+        const delta = (drag.lastY - py) / 300
+        let q = (eqQ[drag.idx]||1.1) + delta
+        q = Math.max(0.2, Math.min(3, q))
+        const qq=[...eqQ]; qq[drag.idx]=q; setEqQ(qq); applyEqQ(qq)
+      }
+      drag.lastY = py
+    }
+    const onUp = (e)=>{ drag.idx=-1; try { canvas.releasePointerCapture?.(e.pointerId) } catch {} e.preventDefault(); e.stopPropagation() }
+    const onDbl = (e)=>{ // reset nearest
+      e.preventDefault(); e.stopPropagation()
+      const rect = canvas.getBoundingClientRect()
+      const px = (e.clientX - rect.left)*dpr
+      const py = (e.clientY - rect.top)*dpr
+      let best=-1, bestD=1e9
+      for (let i=0;i<EQ_BANDS.length;i++){
+        const p = getBandPoint(i)
+        const d = Math.hypot(p.x-px, p.y-py)
+        if (d<bestD){ bestD=d; best=i }
+      }
+      if (best>=0){ const g=[...eqGains]; g[best]=0; setEqGains(g); applyEqGains(g) }
+    }
+    // Use pointer events and capture to avoid browser gestures
+    canvas.addEventListener('pointerdown', onDown, { passive: false })
+    canvas.addEventListener('pointermove', onMove, { passive: false })
+    window.addEventListener('pointerup', onUp, { passive: false })
+    canvas.addEventListener('dblclick', onDbl)
+
+    // Use WebAudio frequency response for precise curve if filters exist
+    const computeEqDb = (freqs)=>{
+      const filters = filtersRef.current||[]
+      const n = freqs.length
+      const total = new Float32Array(n).fill(1)
+      const tmpMag = new Float32Array(n)
+      const tmpPhase = new Float32Array(n)
+      for (const f of filters){ try{ f.getFrequencyResponse(freqs, tmpMag, tmpPhase); for(let i=0;i<n;i++) total[i]*=tmpMag[i]||1 }catch{} }
+      const outDb = new Float32Array(n)
+      for (let i=0;i<n;i++) outDb[i] = 20*Math.log10(Math.max(1e-6, total[i]))
+      return outDb
+    }
+    // Precompute EQ curve only when sizes or EQ params change
+    let dbArrMemo = null
+    const recomputeCurve = ()=>{
+      const n = Math.max(200, Math.floor(width()/ (dpr>1? 1.5 : 1))) // reduce resolution slightly for perf
+      const freqs = new Float32Array(n)
+      for (let px=0; px<n; px++) freqs[px] = minHz * Math.pow(10, (px/n)*Math.log10(maxHz/minHz))
+      dbArrMemo = computeEqDb(freqs)
+    }
+    recomputeCurve()
+
+    const draw = ()=>{
+      raf = requestAnimationFrame(draw)
+      ctx.clearRect(0,0,width(),height())
+      // grid
+      ctx.save(); ctx.strokeStyle='rgba(255,255,255,0.07)'; ctx.lineWidth=1
+      const gridDb=[-12,-6,0,6,12]
+      for(const db of gridDb){ const y = toDbY(db, height()); ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(width(),y); ctx.stroke() }
+      const marks=[32,64,125,250,500,1000,2000,4000,8000,16000]
+      for(const hz of marks){ const x = toX(hz, width()); ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,height()); ctx.stroke() }
+      ctx.restore()
+
+      // live spectrum background (idle-safe)
+      if (analyser && (isPlaying || (audioRef.current?.readyState>=2) )){
+        const freqBins = analyser.frequencyBinCount
+        const data = new Uint8Array(freqBins)
+        analyser.getByteFrequencyData(data)
+        const path = new Path2D(); path.moveTo(0,height())
+        const nyquist = (audioCtxRef.current?.sampleRate||44100)/2
+        const hzPerBin = nyquist / freqBins
+        const smooth=2
+        for (let px=0; px<width(); px++){
+          const hz = minHz * Math.pow(10, (px/width())*Math.log10(maxHz/minHz))
+          const bin = Math.min(freqBins-1, Math.max(0, Math.round(hz / hzPerBin)))
+          let sum=0,c=0; for(let k=-smooth;k<=smooth;k++){ const idx=Math.min(freqBins-1, Math.max(0, bin+k)); sum+=data[idx]; c++ }
+          const v=sum/c; let db = 20*Math.log10(Math.max(1e-4, v/255))
+          if (!isPlaying) db = -100 // show flat line when not playing
+          const y = toDbY(db, height())
+          path.lineTo(px, y)
+        }
+        path.lineTo(width(), height()); path.closePath()
+        const grad = ctx.createLinearGradient(0,0,0,height())
+        grad.addColorStop(0, `hsla(${baseHue} 95% 70% / 0.28)`); grad.addColorStop(1, `hsla(${baseHue} 90% 50% / 0.03)`)
+        ctx.fillStyle = grad
+        ctx.fill(path)
+      }
+
+      // precise EQ response + band fills (use memo curve, scale to canvas width)
+      const n = dbArrMemo?.length || 0
+      const dbArr = dbArrMemo
+      // band area fills
+      const bandRanges = EQ_BANDS.map((f,i)=>{ const lo=i===0?32:Math.sqrt(EQ_BANDS[i-1]*f); const hi=i===EQ_BANDS.length-1?20000:Math.sqrt(EQ_BANDS[i+1]*f); return [lo,hi] })
+      for (let i=0;i<EQ_BANDS.length;i++){
+        const [lo,hi] = bandRanges[i]
+        const start = Math.floor(toX(lo,width())), end = Math.ceil(toX(hi,width()))
+        const p = new Path2D(); p.moveTo(start, toDbY(0, height()))
+        for (let px=start; px<=end; px++){
+          const idx = Math.min(n-1, Math.floor((px/width())*(n-1)))
+          p.lineTo(px, toDbY(dbArr[idx]||0, height()))
+        }
+        p.lineTo(end, toDbY(0, height())); p.closePath()
+        const h = bandHues[i]; const g = ctx.createLinearGradient(0,0,0,height())
+        g.addColorStop(0, `hsla(${h} 95% 65% / 0.25)`); g.addColorStop(1, `hsla(${h} 85% 50% / 0.04)`)
+        ctx.fillStyle = g; ctx.fill(p)
+      }
+      const curve = new Path2D(); curve.moveTo(0, toDbY(dbArr[0]||0, height()))
+      for (let px=1; px<width(); px++){
+        const idx = Math.min(n-1, Math.floor((px/width())*(n-1)))
+        curve.lineTo(px, toDbY(dbArr[idx]||0, height()))
+      }
+      ctx.shadowColor = `hsla(${baseHue} 100% 80% / 0.4)`; ctx.shadowBlur = 8
+      ctx.strokeStyle = `hsla(${baseHue} 100% 80% / 0.95)`
+      ctx.lineWidth = 2.4
+      ctx.stroke(curve)
+      ctx.shadowBlur = 0
+      // band handles
+      for (let i=0;i<EQ_BANDS.length;i++){
+        const p = getBandPoint(i)
+        ctx.beginPath(); ctx.arc(p.x, p.y, 6*dpr, 0, Math.PI*2)
+        ctx.fillStyle = `hsla(${bandHues[i]} 90% 60% / 0.95)`
+        ctx.shadowColor = `hsla(${bandHues[i]} 100% 60% / 0.8)`
+        ctx.shadowBlur = 12
+        ctx.fill(); ctx.shadowBlur=0
+        ctx.strokeStyle='rgba(0,0,0,0.6)'; ctx.lineWidth=1; ctx.stroke()
+        // tooltip bubble
+        const label = `${EQ_BANDS[i]>=1000? (EQ_BANDS[i]/1000).toFixed(0)+'k' : EQ_BANDS[i]}  ${(eqGains[i]||0).toFixed(1)} dB  Q ${(eqQ[i]||1.1).toFixed(2)}`
+        const tw = ctx.measureText(label).width + 10
+        const bx = Math.min(Math.max(4, p.x - tw/2), width()-tw-4), by = Math.max(4, p.y - 18)
+        ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.strokeStyle='rgba(255,255,255,0.2)'; ctx.lineWidth=1
+        ctx.beginPath(); ctx.roundRect(bx,by,tw,16,4); ctx.fill(); ctx.stroke()
+        ctx.fillStyle='rgba(255,255,255,0.9)'; ctx.fillText(label, bx+5, by+12)
+      }
+    }
+    draw()
+    return ()=>{ cancelAnimationFrame(raf); window.removeEventListener('resize', onRes); canvas.removeEventListener('pointerdown', onDown); window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); canvas.removeEventListener('dblclick', onDbl); document.removeEventListener('wheel', guardWheel, true); window.removeEventListener('gesturestart', guardGesture, false); window.removeEventListener('gesturechange', guardGesture, false); window.removeEventListener('gestureend', guardGesture, false); window.removeEventListener('mousedown', guardDouble, true); window.removeEventListener('keydown', guardKeys, true); document.body.style.userSelect = prevSelect }
+  }, [eqOpen, eqGains, eqQ, eqOn])
+  // In mini mode, receive now-playing snapshots from main renderer
+  useEffect(() => {
+    if (!isMiniMode) return
+    try { window.electronAPI.onMiniNowPlaying?.((data)=> setMiniNow(data||null)) } catch {}
+  }, [isMiniMode])
+  // In main renderer, periodically report now-playing to mini window
+  useEffect(() => {
+    if (isMiniMode) return
+    try { window.electronAPI.reportNowPlaying?.({ track: currentTrack, isPlaying, progress, duration, volume }) } catch {}
+  }, [currentTrack, isPlaying, progress, duration, volume, isMiniMode])
   useEffect(() => {
     const onKey = (e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase()==='k') { e.preventDefault(); setPaletteOpen(v=>!v) } }
     window.addEventListener('keydown', onKey)
@@ -914,6 +1397,87 @@ export default function App() {
       </div>
     )
   }
+  function NewPlaylistModal(){
+    if (!newPlaylistOpen) return null
+    const [name, setName] = React.useState(`Playlist ${playlists.length+1}`)
+    const [busy, setBusy] = React.useState(false)
+    const close = ()=>{ if(!busy) setNewPlaylistOpen(false) }
+    const create = async ()=>{
+      const n = (name||'').trim(); if(!n) return;
+      setBusy(true)
+      try { await createPlaylist(n) } finally { setBusy(false); setNewPlaylistOpen(false) }
+    }
+    return (
+      <div className="fixed inset-0 z-50 bg-background/70 backdrop-blur-sm flex items-center justify-center" onClick={close}>
+        <div className="w-[360px] bg-surface border border-border rounded p-4 shadow-xl" onClick={(e)=>e.stopPropagation()}>
+          <div className="text-sm font-semibold mb-2">New playlist</div>
+          <input className="w-full bg-surface-muted border border-border rounded px-2 py-1 text-sm" value={name} onChange={(e)=>setName(e.target.value)} placeholder="Playlist name" />
+          <div className="mt-3 flex justify-end gap-2">
+            <Button variant="ghost" onClick={close} disabled={busy}>Cancel</Button>
+            <Button onClick={create} disabled={!name.trim() || busy}>{busy? 'Creating…':'Create'}</Button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  function RenamePlaylistModal(){
+    if (!renameOpen || !renameTarget) return null
+    const [name, setName] = React.useState(renameTarget.name || '')
+    const close = ()=>{ setRenameOpen(false); setRenameTarget(null) }
+    const save = async ()=>{ const n=(name||'').trim(); if(!n) return; await renamePlaylist(renameTarget.id, n); close() }
+    return (
+      <div className="fixed inset-0 z-50 bg-background/70 backdrop-blur-sm flex items-center justify-center" onClick={close}>
+        <div className="w-[360px] bg-surface border border-border rounded p-4 shadow-xl" onClick={(e)=>e.stopPropagation()}>
+          <div className="text-sm font-semibold mb-2">Rename playlist</div>
+          <input className="w-full bg-surface-muted border border-border rounded px-2 py-1 text-sm" value={name} onChange={(e)=>setName(e.target.value)} />
+          <div className="mt-3 flex justify-end gap-2">
+            <Button variant="ghost" onClick={close}>Cancel</Button>
+            <Button onClick={save} disabled={!name.trim()}>Save</Button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  function PlaylistView(){
+    const pl = activePlaylist
+    if (!pl) return (
+      <div className="bg-surface border border-border rounded p-3">
+        <div className="text-sm text-muted-foreground">No playlist selected</div>
+      </div>
+    )
+    return (
+      <div className="bg-surface border border-border rounded p-3">
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-sm font-semibold">{pl.name} <span className="text-muted-foreground">({pl.songs?.length || 0})</span></div>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" onClick={() => { setRenameTarget({ id: pl.id, name: pl.name }); setRenameOpen(true) }}>Rename</Button>
+            <Button variant="ghost" onClick={async () => { const items = (pl.songs||[]).map(t=>({ id: t.stream_id||t.id, stream_id: String(t.stream_id||t.id), platform: t.platform||'youtube', title: t.title, artist: t.artist, streamUrl: t.stream_url||t.streamUrl })); if(items.length===0){ alert('Nothing to download'); return } const settings = await window.electronAPI.getSettings?.()||{}; const dir = settings.downloadDir || window.prompt?.('Download folder'); if(!dir) return; await window.electronAPI.downloadQueueAdd?.(items, dir) }}>Download</Button>
+            <Button variant="ghost" onClick={async () => { const settings = await window.electronAPI.getSettings?.()||{}; const dir = settings.downloadDir || window.prompt?.('Download folder'); if(!dir) return; const existing = await window.electronAPI.getDownloads?.(); const byId = new Set((existing||[]).map(d=>d.song_id)); const items = (pl.songs||[]).filter(t=>!byId.has(t.id)).map(t=>({ id: t.stream_id||t.id, stream_id: String(t.stream_id||t.id), platform: t.platform||'youtube', title: t.title, artist: t.artist, streamUrl: t.stream_url||t.streamUrl })); if(items.length===0){ alert('Nothing new'); return } await window.electronAPI.downloadQueueAdd?.(items, dir) }}>Download Missing</Button>
+            <Button variant="ghost" onClick={async () => { if (confirm(`Delete playlist "${pl.name}"?`)) { await window.electronAPI.deletePlaylist?.(pl.id); await reloadPlaylists(); setActivePlaylistId(null); setView('home') } }}>Delete</Button>
+          </div>
+        </div>
+        <div className="space-y-1">
+          {(!pl.songs || pl.songs.length === 0) && (
+            <div className="text-xs text-muted-foreground">Empty — go to Search and click + to add songs.</div>
+          )}
+          {(pl.songs || []).map((t, idx) => (
+            <div key={`${t.id}_${idx}`} className="text-xs flex items-center gap-2">
+              <img src={t.thumbnail_url || t.thumbnail || '/assets/icons/celes-star.png'} className="w-8 h-8 rounded object-cover bg-surface-muted"/>
+              <div className="flex-1 truncate">{t.title}</div>
+              <div className="flex items-center gap-1">
+                <Button variant="ghost" onClick={() => doPlay({ ...t, platform: t.platform || (t.type === 'stream' ? t.platform : 'internetarchive') })}>Play</Button>
+                <Button variant="ghost" onClick={async ()=>{ await window.electronAPI.removeSongFromPlaylist?.(pl.id, t.id); await reloadPlaylists(); }}>Remove</Button>
+                <Button variant="ghost" onClick={async ()=>{ await window.electronAPI.moveSongInPlaylist?.(pl.id, t.id, Math.max(0, idx-1)); await reloadPlaylists(); }}>↑</Button>
+                <Button variant="ghost" onClick={async ()=>{ await window.electronAPI.moveSongInPlaylist?.(pl.id, t.id, Math.min((pl.songs?.length||1)-1, idx+1)); await reloadPlaylists(); }}>↓</Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
 
   function CommandPalette(){
     const [input, setInput] = useState('')
@@ -926,7 +1490,7 @@ export default function App() {
     ]
     const filtered = commands.filter(c=>c.name.toLowerCase().includes(input.toLowerCase()))
     return (
-      <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center pt-32" onClick={()=>setPaletteOpen(false)}>
+      <div className="fixed inset-0 z-50 bg-background/40 flex items-start justify-center pt-32" onClick={()=>setPaletteOpen(false)}>
         <div className="w-[560px] bg-surface border border-border rounded shadow-xl" onClick={(e)=>e.stopPropagation()}>
           <input autoFocus className="w-full bg-surface-muted border-b border-border px-3 py-2 text-sm" placeholder="Type a command…" value={input} onChange={(e)=>setInput(e.target.value)} onKeyDown={(e)=>{ if(e.key==='Escape') setPaletteOpen(false)}} />
           <div className="max-h-80 overflow-auto">
@@ -988,6 +1552,34 @@ export default function App() {
     )
   }
 
+  function LibraryView(){
+    return (
+      <div className="bg-surface border border-border rounded p-3">
+        <div className="text-sm font-semibold mb-2">Library</div>
+        <div className="space-y-3">
+          <div>
+            <div className="text-xs font-semibold mb-2">Liked Songs ({likedSongs?.length||0})</div>
+            {(!likedSongs || likedSongs.length===0) && (
+              <div className="text-xs text-muted-foreground">Nothing liked yet</div>
+            )}
+            <div className="space-y-1">
+              {(likedSongs||[]).map((t, idx)=> (
+                <div key={`${t.id||t.stream_id||idx}`} className="text-xs flex items-center gap-2 border border-border rounded p-2">
+                  <img src={t.thumbnail_url || t.thumbnail || '/assets/icons/celes-star.svg'} className="w-7 h-7 rounded object-cover bg-surface-muted"/>
+                  <div className="flex-1 truncate">{t.title}</div>
+                  <span className="flex items-center gap-1">
+                    <Button variant="ghost" onClick={()=> doPlay({ ...t, platform: t.platform || (t.type==='stream' ? t.platform : 'internetarchive') })}>Play</Button>
+                    <Button variant="ghost" onClick={()=> addToQueue(t)}>Queue</Button>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   const [paletteOpen, setPaletteOpen] = useState(false)
 
   function SettingsPanel(){
@@ -1007,7 +1599,7 @@ export default function App() {
             <div className="mb-1">Target LUFS</div>
             <input type="number" step={1} min={-30} max={-8} className="w-full bg-surface-muted border border-border rounded px-2 py-1" value={targetLufs} onChange={(e)=>setTargetLufs(Number(e.target.value)||-14)} />
           </div>
-          <div className="flex items-center justify-between"><div>Equalizer</div><input type="checkbox" checked={eqOn} onChange={(e)=>{ setEqOn(e.target.checked); if(e.target.checked) ensureAudioGraph(); }} /></div>
+          <div className="flex items-center justify-between"><div>Equalizer</div><input type="checkbox" checked={eqOn} onChange={(e)=>{ const v=e.target.checked; setEqOn(v); try{ localStorage.setItem('celes.eqOn', String(v)) }catch{}; if(v) ensureAudioGraph(); }} /></div>
           <div className="flex items-center justify-between"><div>Lyrics</div><input type="checkbox" checked={lyricsEnabled} onChange={(e)=>{ const v=e.target.checked; setLyricsEnabled(v); try{ localStorage.setItem('celes.lyricsEnabled', String(v)) }catch{} }} /></div>
           <div className="flex items-center justify-between"><div>Auto open lyrics</div><input type="checkbox" checked={autoOpenLyrics} onChange={(e)=>{ const v=e.target.checked; setAutoOpenLyrics(v); try{ localStorage.setItem('celes.autoOpenLyrics', String(v)) }catch{} }} /></div>
           <div className="flex items-center justify-between"><div>Show mini lyric</div><input type="checkbox" checked={showMiniLyric} onChange={(e)=>{ const v=e.target.checked; setShowMiniLyric(v); try{ localStorage.setItem('celes.showMiniLyric', String(v)) }catch{} }} /></div>
@@ -1017,11 +1609,12 @@ export default function App() {
               {Object.keys(EQ_PRESETS).map(p=> <option key={p} value={p}>{p}</option>)}
             </select>
           </div>
-          <div className="grid grid-cols-5 gap-2">
+          <div className="grid grid-cols-5 gap-3">
             {EQ_BANDS.map((f,i)=> (
               <div key={f} className="flex flex-col items-center">
                 <div className="text-[10px] mb-1">{f/1000>=1?`${f/1000}k`:`${f}`}</div>
-                <input type="range" min={-12} max={12} step={1} value={eqGains[i]||0} onChange={(e)=>{ const g=[...eqGains]; g[i]=Number(e.target.value); setEqGains(g); applyEqGains(g) }} className="h-20 rotate-[-90deg] origin-left w-20" />
+                <input type="range" min={-12} max={12} step={0.5} value={eqGains[i]||0} onChange={(e)=>{ const g=[...eqGains]; g[i]=Number(e.target.value); setEqGains(g); applyEqGains(g) }} className="h-20 rotate-[-90deg] origin-left w-24" />
+                <input type="range" min={0.1} max={3} step={0.05} value={eqQ[i]||1.1} onChange={(e)=>{ const q=[...eqQ]; q[i]=Number(e.target.value); setEqQ(q); applyEqQ(q) }} className="h-16 rotate-[-90deg] origin-left w-20 mt-2" />
               </div>
             ))}
           </div>
@@ -1090,6 +1683,67 @@ export default function App() {
     window.electronAPI.onDownloadProgress?.(handler)
   }, [])
 
+  if (isMiniMode) {
+    const t = miniNow?.track || currentTrack
+    const playing = miniNow?.isPlaying ?? isPlaying
+    const prog = Number(miniNow?.progress ?? progress) || 0
+    const dur = Number(miniNow?.duration ?? duration) || 0
+    const vol = Number(miniNow?.volume ?? volume) || 0
+    return (
+      <div className="relative min-h-screen text-[hsl(var(--foreground))] flex items-center mini-window select-none"
+           style={{ background: 'transparent' }}>
+        <div className="w-full h-full px-3 pt-6 pb-3 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--surface))]/96 shadow-lg">
+        {/* macOS-like traffic lights (green expands back) */}
+        <div className="absolute top-2 left-3 flex items-center gap-2 no-drag">
+          <span className="inline-block w-3 h-3 rounded-full" style={{ background:'#ff5f57', opacity:0.9 }} />
+          <span className="inline-block w-3 h-3 rounded-full" style={{ background:'#ffbd2e', opacity:0.9 }} />
+          <button
+            title="Expand"
+            className="inline-block w-3 h-3 rounded-full ring-0 focus:outline-none"
+            style={{ background:'#28c840' }}
+            onClick={()=>{ try { window.electronAPI.showMainWindow?.() } catch {} }}
+          />
+        </div>
+        {/* Keep audio elements in DOM for WebAudio context even if this window isn't the primary player */}
+        <div className="hidden">
+          <audio id="audio-el" ref={audioRef} preload="auto" crossOrigin="anonymous" />
+          <audio id="audio-next" ref={nextAudioRef} preload="auto" crossOrigin="anonymous" />
+        </div>
+        <div className="w-full">
+          <div className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-3">
+            {/* Art */}
+            <img src={t?.thumbnail || '/assets/icons/celes-star.png'} className="w-11 h-11 rounded object-cover no-drag" alt="art" />
+            {/* Meta */}
+            <div className="min-w-0 pr-2">
+              <div className="text-sm font-semibold truncate leading-5">{t?.title || 'Nothing playing'}</div>
+              <div className="text-[11px] text-muted-foreground truncate">{t?.artist || ''}</div>
+            </div>
+            {/* Transport */}
+            <div className="flex items-center gap-2 no-drag">
+            <button className="p-2 rounded hover:bg-surface-muted" onClick={()=>{ try { window.electronAPI.sendRendererCommand?.('previous') } catch {} }} aria-label="Previous"><SkipBack size={16} /></button>
+              <button className="p-2 rounded-full bg-primary text-primary-foreground hover:bg-primary/90" onClick={()=>{ try { window.electronAPI.sendRendererCommand?.('toggle-play') } catch {} }} aria-label="Play/Pause">{playing ? <Pause size={16}/> : <Play size={16}/>}</button>
+            <button className="p-2 rounded hover:bg-surface-muted" onClick={()=>{ try { window.electronAPI.sendRendererCommand?.('next') } catch {} }} aria-label="Next"><SkipForward size={16} /></button>
+          </div>
+            {/* Volume */}
+            <div className="flex items-center gap-2 w-36 no-drag">
+            <button className="p-2 rounded hover:bg-surface-muted" onClick={()=>{ try { window.electronAPI.sendRendererCommand?.('set-volume', { volume: vol > 0 ? 0 : 0.8 }) } catch {} }} aria-label="Mute">{vol > 0 ? <Volume2 size={16}/> : <VolumeX size={16}/>}</button>
+              <input type="range" min={0} max={1} step={0.01} value={vol} onChange={(e)=>{ const v=Number(e.target.value); try { window.electronAPI.sendRendererCommand?.('set-volume', { volume: v }) } catch {} }} className="w-20 accent-primary range-thin" />
+            </div>
+          </div>
+          {/* Progress */}
+          <div className="flex items-center gap-2 mt-2 no-drag">
+            <span className="text-[11px] text-muted-foreground w-10 text-right">{fmtTime(prog)}</span>
+            <input type="range" min={0} max={Math.max(1, dur)} step="any" value={Math.min(prog, dur || 0)}
+                   onChange={(e)=>{ const time = Number(e.target.value); setMiniNow(prev=> ({ ...(prev||{}), progress: time })); try { window.electronAPI.sendRendererCommand?.('seek', { time }) } catch {} }}
+                   className="flex-1 accent-primary range-thin" />
+            <span className="text-[11px] text-muted-foreground w-10">{fmtTime(dur)}</span>
+          </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-[hsl(var(--background))] text-[hsl(var(--foreground))] flex">
       <Sidebar onSelect={setView} />
@@ -1107,9 +1761,9 @@ export default function App() {
 
         <main className="flex-1 grid lg:grid-cols-[1fr_320px_340px] md:grid-cols-[1fr_320px] gap-4 p-4 pb-28">
           <section className="space-y-3">
-            {view === 'home' && (
+            {(view === 'home' || view === 'search') && (
               <>
-                {homeLoading && (
+                {view==='home' && homeLoading && (
                   <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}>
                     {Array.from({length: 6}).map((_,i)=> (
                       <div key={`home_sk_${i}`} className="bg-surface border border-border rounded p-3 animate-pulse">
@@ -1120,8 +1774,8 @@ export default function App() {
                     ))}
               </div>
             )}
-                {!homeLoading && (<>
-                  {explore && (
+                {view==='home' && !homeLoading && (<>
+                  {view==='home' && explore && (
                     <>
                       <SectionCard title={`New Releases • ${chartsDate}`} items={explore.newReleases||[]} />
                       <SectionCard title={`Trending Now • ${chartsDate}`} items={explore.trending||[]} />
@@ -1136,8 +1790,6 @@ export default function App() {
                   )}
                   {!explore && <div className="text-sm text-muted-foreground">Loading explore…</div>}
                 </>)}
-              </>
-            )}
             {view === 'search' && (
               <>
                 {!results.length && <div className="text-sm text-muted-foreground">Type anything – e.g. “calming piano at night”, “vocal jazz 50s”, “beethoven sonata 14”.</div>}
@@ -1151,59 +1803,44 @@ export default function App() {
               ))}
               {!loading && results.map((t) => (
                 <div key={t.id} className="bg-surface border border-border rounded p-3 flex flex-col gap-2">
-                  <img alt={t.title} src={t.thumbnail || 'https://via.placeholder.com/300x200/4a9eff/ffffff?text=♫'} className="w-full h-36 object-cover rounded" />
+                   <img alt={t.title} src={t.thumbnail || '/assets/icons/celes-star.png'} className="w-full h-36 object-cover rounded" />
                   <div className="text-sm font-medium line-clamp-2">{t.title}</div>
                       <div className="text-xs text-muted-foreground flex items-center justify-between">
                         <span><button className="underline" onClick={()=>loadArtist(t.artist)}>{t.artist}</button> • {t.platform}</span>
                         <span className="flex items-center gap-2">
                           <button className="p-1 hover:text-primary" title="Add to queue" onClick={() => addToQueue(t)}><ListPlus size={16}/></button>
-                          <button className="p-1 hover:text-primary" title="Like" onClick={async () => { const id = await persistTrack(t); if (id) await window.electronAPI.toggleLikeSong?.(id) }}><Heart size={16}/></button>
-                          <button className="p-1 hover:text-primary" title="Add to playlist" onClick={async () => {
-                            let pid = activePlaylistId
-                            if (!pid || !playlists.find(p=>p.id===pid)) {
-                              const names = playlists.map((p, i) => `${i+1}. ${p.name}`)
-                               const choice = window.prompt?.(`Add to which playlist?\n${names.join('\n')}\nOr type a new name:`)
-                              if (!choice) return
-                              const idx = Number(choice)-1
-                              if (Number.isInteger(idx) && idx >= 0 && idx < playlists.length) pid = playlists[idx].id
-                              else { await createPlaylist(choice.trim()); pid = playlists[playlists.length-1]?.id }
-                            }
-                            await addTrackToDbPlaylist(pid, t)
-                          }}><Plus size={16}/></button>
+                          <button className={`p-1 ${likedSet.has(keyForTrack(t))? 'text-primary' : 'hover:text-primary'}`} aria-label="Like" title="Like" onClick={async () => { const id = await persistTrack(t); if (id) { const res = await window.electronAPI.toggleLikeSong?.(id); const isLiked = !!res?.isLiked; setLikedSet(prev=>{ const next = new Set(Array.from(prev)); const k=keyForTrack(t); if (isLiked) next.add(k); else next.delete(k); try{ localStorage.setItem('celes.likedSet', JSON.stringify(Array.from(next))) }catch{}; return next }); const fresh = await window.electronAPI.getLikedSongs?.(); if (Array.isArray(fresh)) setLikedSongs(fresh) } }}>
+                            <Heart size={16}/>
+                          </button>
+                          <button className="p-1 hover:text-primary" title="Add to playlist" onClick={() => openPlaylistPickerForTrack(t)}><Plus size={16}/></button>
                         </span>
                       </div>
                       <div className="mt-1">
                         <Button className="w-full" onClick={() => doPlay(t)}>Play</Button>
-                      </div>
-                      {/* Trimmed action set in Spotify-like compact row */}
-                      {/* Removed Import button as requested */}
-                      {/* Removed duplicate +Queue and ♥ buttons in favor of icon row */}
-                      {/* Keep Radio action minimal */}
-                      <div className="hidden">
-                        <Button className="mt-1" variant="ghost" onClick={async () => {
-                          let pid = activePlaylistId
-                          if (!pid || !playlists.find(p=>p.id===pid)) {
-                            const names = playlists.map((p, i) => `${i+1}. ${p.name}`)
-                           const choice = window.prompt?.(`Add to which playlist?\n${names.join('\n')}\nOr type a new name:`)
-                            if (!choice) return
-                            const idx = Number(choice)-1
-                            if (Number.isInteger(idx) && idx >= 0 && idx < playlists.length) pid = playlists[idx].id
-                            else { await createPlaylist(choice.trim()); pid = playlists[playlists.length-1]?.id }
-                          }
-                          await addTrackToDbPlaylist(pid, t)
-                        }}>+ Playlist</Button>
                   </div>
                 </div>
               ))}
             </div>
+                  </>
+                )}
               </>
             )}
             {/* Artist view removed */}
             {view === 'playlist' && (
+              <div className="space-y-3">
+                {/* Keep the search row on top for discovery while viewing a playlist */}
+                <div className="flex items-center gap-2 px-2 py-1 rounded bg-surface border border-border">
+                  <input className="bg-transparent outline-none text-sm w-full" placeholder="Search to add more…" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { setView('search'); doSearch() } }} />
+                  <Button onClick={()=>{ setView('search'); doSearch() }} disabled={loading}>{loading ? 'Searching…' : 'Search'}</Button>
+                </div>
               <PlaylistView />
+              </div>
             )}
             {view === 'downloads' && (
               <DownloadsView />
+            )}
+            {view === 'library' && (
+              <LibraryView />
             )}
           </section>
 
@@ -1214,7 +1851,7 @@ export default function App() {
                 {queue.length === 0 && <div className="text-xs text-muted-foreground">Queue is empty</div>}
                 {queue.map((q, i) => (
                   <div key={`${q.id}_${i}`} className="text-xs flex items-center gap-2">
-                    <img src={q.thumbnail || 'https://via.placeholder.com/32'} className="w-8 h-8 rounded object-cover"/>
+                    <img src={q.thumbnail || '/assets/icons/celes-star.png'} className="w-8 h-8 rounded object-cover"/>
                     <div className="flex-1 truncate">{q.title}</div>
                     <Button variant="ghost" onClick={() => playNext(q)}>Play next</Button>
                     <Button variant="ghost" onClick={() => removeFromQueue(i)}>Remove</Button>
@@ -1233,72 +1870,28 @@ export default function App() {
             <div className="bg-surface border border-border rounded p-3">
               <div className="text-sm font-semibold mb-2">Playlists</div>
               <div className="flex gap-2 mb-2">
-                <Button onClick={() => {
-                  const n = window.prompt?.('New playlist name', `Playlist ${playlists.length+1}`)
-                  if (n && n.trim()) createPlaylist(n.trim())
-                }}>New</Button>
-                {activePlaylist && activePlaylist.type !== 'system' && (
-                  <>
-                    <Button variant="ghost" onClick={() => {
-                      // export JSON
-                      const data = JSON.stringify({ name: activePlaylist.name, tracks: activePlaylist.songs || [] }, null, 2)
-                      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([data], {type:'application/json'})); a.download = `${activePlaylist.name}.json`; a.click();
-                    }}>Export</Button>
-                    <Button variant="ghost" onClick={() => {
-                      const inp = document.createElement('input'); inp.type='file'; inp.accept='application/json';
-                      inp.onchange = async (e)=>{ const f=e.target.files?.[0]; if(!f) return; const text=await f.text().catch(()=>null); if(!text) return; try { const json = JSON.parse(text); const name = json.name || `Imported ${Date.now()}`; await createPlaylist(name); const pl = playlists.find(p=>p.name===name) || (await reloadPlaylists(), playlists.find(p=>p.name===name)); const pid = pl?.id; for (const t of json.tracks || []) { await addTrackToDbPlaylist(pid, t) } } catch {} }
-                      inp.click()
-                    }}>Import</Button>
-                  </>
-                )}
+                <Button onClick={() => setNewPlaylistOpen(true)}>New</Button>
               </div>
               <div className="space-y-2">
-                {playlists.map(p => (
+                {playlists.filter(p=>p.type==='user').length===0 && (
+                  <div className="text-xs text-muted-foreground">No playlists yet</div>
+                )}
+                {playlists.filter(p=>p.type==='user').map(p => (
                   <div key={p.id} className={`border rounded p-2 ${activePlaylistId===p.id?'border-primary':'border-border'}`}>
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2 min-w-0">
-                        <div className="w-8 h-8 rounded bg-surface-muted overflow-hidden flex items-center justify-center">
+                        <div className="w-8 h-8 rounded overflow-hidden flex items-center justify-center" style={{ background: (p.cover_color||'').trim() || 'hsl(var(--surface-muted))' }}>
                           {playlistCovers[p.id] ? <img src={playlistCovers[p.id]} alt="cover" className="w-full h-full object-cover"/> : <span className="text-[10px] text-muted-foreground">★</span>}
                         </div>
-                    <div className="text-xs font-medium truncate">{p.name} <span className="text-muted-foreground">({p.songs?.length || 0})</span></div>
+                        <div className="text-xs font-medium truncate">{p.name}</div>
                       </div>
                       <div className="flex items-center gap-2">
                       <Button variant="ghost" onClick={() => openPlaylistPage(p.id)}>Open</Button>
-                        <Button variant="ghost" onClick={async () => { queuePlaylistDownload(p, false) }}>Download</Button>
-                        <Button variant="ghost" onClick={async () => { queuePlaylistDownload(p, true) }}>Download Missing</Button>
-                        {p.type !== 'system' && (
-                          <>
-                             <Button variant="ghost" onClick={() => { const n = window.prompt?.('Rename playlist', p.name); if (n && n.trim()) renamePlaylist(p.id, n.trim()) }}>Rename</Button>
-                            <Button variant="ghost" onClick={() => {
-                              const inp = document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.onchange = async (e) => { const f = e.target.files?.[0]; if (!f) return; const reader = new FileReader(); reader.onload = () => setPlaylistCover(p.id, reader.result); reader.readAsDataURL(f); }; inp.click();
-                            }}>Cover</Button>
-                            <Button variant="ghost" onClick={() => { if (confirm(`Delete playlist "${p.name}"?`)) deletePlaylist(p.id) }}>Delete</Button>
-                          </>
-                        )}
+                        <Button variant="ghost" onClick={async ()=>{ const c = window.prompt?.('Set color (CSS value, e.g. #7c3aed or hsl(280 80% 60%))', p.cover_color || '#7c3aed'); if(!c) return; await window.electronAPI.updatePlaylistColor?.(p.id, c); await reloadPlaylists() }}>Color</Button>
                       </div>
-                    </div>
-                    {activePlaylistId===p.id && (
-                      <div className="mt-2 space-y-1 max-h-48 overflow-auto pr-1">
-                        {(p.songs?.length || 0) === 0 && <div className="text-xs text-muted-foreground">No tracks yet</div>}
-                         {(p.songs || []).map((t, idx) => (
-                          <div key={`${t.id}_${idx}`} className="text-xs flex items-center gap-2">
-                   <img src={t.thumbnail_url || t.thumbnail || '/assets/icons/celes-star.png'} className="w-7 h-7 rounded object-cover bg-surface-muted"/>
-                            <div className="flex-1 truncate">{t.title}</div>
-                             <div className="flex items-center gap-1">
-                               <Button variant="ghost" onClick={() => doPlay({ ...t, platform: t.platform || (t.type === 'stream' ? t.platform : 'internetarchive') })}>Play</Button>
-                               <Button variant="ghost" onClick={async ()=>{ await window.electronAPI.removeSongFromPlaylist?.(p.id, t.id); await reloadPlaylists(); }}>Remove</Button>
-                               <Button variant="ghost" onClick={async ()=>{ await window.electronAPI.moveSongInPlaylist?.(p.id, t.id, Math.max(0, idx-1)); await reloadPlaylists(); }}>↑</Button>
-                               <Button variant="ghost" onClick={async ()=>{ await window.electronAPI.moveSongInPlaylist?.(p.id, t.id, Math.min((p.songs?.length||1)-1, idx+1)); await reloadPlaylists(); }}>↓</Button>
                              </div>
                           </div>
                         ))}
-                        {playlistDl[p.id] && (
-                          <div className="text-[11px] text-muted-foreground">Downloading: {playlistDl[p.id].done}/{playlistDl[p.id].total}{playlistDl[p.id].currentPercent!=null? ` • ${playlistDl[p.id].currentPercent}%`:''}</div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))}
               </div>
             </div>
           </aside>
@@ -1308,67 +1901,84 @@ export default function App() {
       {themeOpen && <ThemePanel />}
       {settingsOpen && <SettingsPanel />}
       {pickerOpen && <PlaylistPickerModal />}
+      {newPlaylistOpen && <NewPlaylistModal />}
+      {renameOpen && <RenamePlaylistModal />}
+      {eqOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={()=>setEqOpen(false)}>
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+          <div className="relative w-[880px] max-w-[92vw] bg-[hsl(var(--surface))] border border-border rounded-xl shadow-2xl overflow-hidden" onClick={(e)=>e.stopPropagation()}>
+            <div className="px-4 py-3 flex items-center justify-between border-b border-border">
+              <div className="flex items-center gap-2 text-sm font-semibold">Equalizer</div>
+              <div className="flex items-center gap-2 text-[11px]">
+                <label className="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={eqOn} onChange={(e)=>{ const v=e.target.checked; setEqOn(v); try{ localStorage.setItem('celes.eqOn', String(v)) }catch{}; if(v) ensureAudioGraph(); }} /> Enabled</label>
+                <input className="px-2 py-1 bg-surface-muted border border-border rounded" value={presetName} onChange={(e)=>setPresetName(e.target.value)} style={{width:140}} />
+                <Button variant="ghost" onClick={()=> saveCurrentPreset(presetName||'Custom') }>Save</Button>
+                <div className="flex items-center gap-1">
+                  <Button variant="ghost" onClick={()=> storePreset('A') }>Store A</Button>
+                  <Button variant="ghost" onClick={()=> storePreset('B') }>Store B</Button>
+                  <Button variant="ghost" onClick={()=> recallPreset('A') }>A</Button>
+                  <Button variant="ghost" onClick={()=> recallPreset('B') }>B</Button>
+                </div>
+                <Button variant="ghost" onClick={()=>setEqOpen(false)}>Close</Button>
+              </div>
+            </div>
+            <div className="p-4">
+              <div className="flex items-center gap-2 text-xs mb-3">
+                <div>Preset:</div>
+                <select className="bg-surface-muted border border-border rounded px-2 py-1" onChange={(e)=>setEqPreset(e.target.value)}>
+                  {Object.keys(EQ_PRESETS).map(p=> <option key={p} value={p}>{p}</option>)}
+                </select>
+              </div>
+          <div className="relative h-[360px] rounded-lg border border-border bg-gradient-to-b from-white/2 to-black/10">
+            <canvas id="eq-curve" className="absolute inset-0" />
+            <div className="absolute top-3 left-3 flex items-center gap-2 text-[11px]">
+              <div className="rounded border border-border overflow-hidden">
+                {['Basic','Advanced','Expert'].map(m => (
+                  <button key={m} className={`px-2 py-1 ${eqMode===m? 'bg-surface-muted text-foreground' : 'text-muted-foreground'}`} onClick={()=>{ setEqMode(m); try{ localStorage.setItem('celes.eqMode', m) }catch{} }}>{m}</button>
+                ))}
+              </div>
+              <label className="ml-2 flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={visRidgeOn} onChange={(e)=>{ const v=e.target.checked; setVisRidgeOn(v); try{ localStorage.setItem('celes.visRidgeOn', String(v)) }catch{} }} /> Ridge</label>
+            </div>
+            <div className="absolute top-3 right-3 flex items-center gap-2 text-[11px]">
+              <div className="flex items-center gap-2">
+                <span>Slope</span><input type="range" min={0} max={6} step={0.5} value={visSlope} onChange={(e)=>{ const v=Number(e.target.value); setVisSlope(v); try{ localStorage.setItem('celes.visSlope', String(v)) }catch{} }} />
+                <span>Smooth</span><input type="range" min={0} max={6} step={1} value={visSmooth} onChange={(e)=>{ const v=Number(e.target.value); setVisSmooth(v); try{ localStorage.setItem('celes.visSmooth', String(v)) }catch{} }} />
+                <span>Decay</span><input type="range" min={0} max={3} step={0.1} value={visRidgeDecay} onChange={(e)=>{ const v=Number(e.target.value); setVisRidgeDecay(v); try{ localStorage.setItem('celes.visRidgeDecay', String(v)) }catch{} }} />
+              </div>
+            </div>
+          </div>
+            </div>
+          </div>
+        </div>
+      )}
       {miniDockOn && (
         <div className="fixed bottom-24 right-4 z-40 bg-surface/95 border border-border rounded shadow-xl p-3 w-[340px]">
           <div className="text-sm font-semibold mb-2 flex items-center justify-between">
             <span>Mini Dock</span>
             <span className="text-[11px] text-muted-foreground flex items-center gap-2">
-              <label className="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={dockVisOn} onChange={(e)=>setDockVisOn(e.target.checked)} /> Vis</label>
-              <label className="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={dockVideoOn} onChange={async (e)=>{
-                const on = e.target.checked
-                setDockVideoOn(on)
-                if (on) {
-                  try {
-                    // Turn off visualizer when enabling video
-                    setDockVisOn(false)
-                    setDockVideoFailed(false)
-                    let vid = deriveYouTubeId(currentTrack)
-                    if (!vid && currentTrack){
-                      const q = [currentTrack.artist, currentTrack.title].filter(Boolean).join(' ')
-                      const found = await window.electronAPI.searchMusicWithFallback?.(q, 'youtube', 3)
-                      const cand = Array.isArray(found) ? found.find(x=> String(x?.id||'').length===11) : null
-                      if (cand) vid = String(cand.id).slice(0,11)
-                    }
-                    if (!vid) { setDockVideoOn(false); return }
-                    setDockVideoId(vid)
-                    const res = await window.electronAPI.getYouTubeVideoStream?.(vid)
-                    const url = res?.streamUrl
-                    if (!url) { setDockVideoOn(false); return }
-                    const proxy = `celes-stream://proxy?u=${encodeURIComponent(url)}`
-                    setDockVideoUrl(proxy)
-                    // Proactively load and play
-                    setTimeout(()=>{ try { if (dockVideoRef.current) { dockVideoRef.current.src = proxy; dockVideoRef.current.load(); dockVideoRef.current.play().catch(()=>{}) } } catch {} }, 0)
-                  } catch { setDockVideoOn(false) }
-                } else {
-                  setDockVideoUrl(null)
-                  try { if (dockVideoRef.current) { dockVideoRef.current.pause(); dockVideoRef.current.src = '' } } catch {}
-                }
-              }} /> Video</label>
+              <label className="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={dockVisOn} onChange={(e)=>{ const v=e.target.checked; setDockVisOn(v); try{ localStorage.setItem('celes.dockVisOn', String(v)) }catch{} }} /> Spectrum</label>
             </span>
           </div>
           <div className="flex items-center gap-3">
-            <img src={currentTrack?.thumbnail || 'https://via.placeholder.com/48'} className="w-12 h-12 rounded object-cover"/>
+            <img src={currentTrack?.thumbnail || '/assets/icons/celes-star.svg'} className="w-12 h-12 rounded object-cover bg-surface-muted p-1"/>
             <div className="flex-1 min-w-0">
               <div className="text-sm truncate">{currentTrack?.title || 'Nothing playing'}</div>
               <div className="text-xs text-muted-foreground truncate">{currentTrack?.artist || ''}</div>
             </div>
             <div className="flex items-center gap-2">
-              <button className="p-2 rounded hover:bg-surface-muted" onClick={()=>nextFromQueue()}><SkipBack size={16}/></button>
+              <button className="p-2 rounded hover:bg-surface-muted" onClick={previousOrRestart}><SkipBack size={16}/></button>
               <button className="p-2 rounded bg-primary text-primary-foreground hover:bg-primary/90" onClick={togglePlayPause}>{isPlaying? <Pause size={16}/> : <Play size={16}/>}</button>
               <button className="p-2 rounded hover:bg-surface-muted" onClick={()=>nextFromQueue()}><SkipForward size={16}/></button>
+              <button className="p-2 rounded hover:bg-surface-muted" onClick={()=> setEqOpen(true) } title="Equalizer">EQ</button>
             </div>
           </div>
-          {(dockVisOn || dockVideoOn) && (
-            <div className="mt-2 rounded overflow-hidden border border-border bg-black/60" style={{height: 120}}>
-              {dockVideoOn ? (
-                dockVideoUrl && !dockVideoFailed ? (
-                  <video ref={dockVideoRef} src={dockVideoUrl||''} className="w-full h-full object-contain bg-black" muted playsInline autoPlay crossOrigin="anonymous" onError={()=>setDockVideoFailed(true)} onCanPlay={()=>{ try { dockVideoRef.current?.play?.() } catch {} }} />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">Video unavailable</div>
-                )
-              ) : (
+          {dockVisOn && (
+            <div className="mt-2 rounded overflow-hidden border border-border bg-background/60 relative" style={{height: 160}}>
                 <canvas id="dock-vis" className="w-full h-full" />
-              )}
+              <div className="absolute mt-2 right-5 -translate-y-8 flex items-center gap-2 text-[11px] text-muted-foreground">
+                <span className="px-2 py-0.5 rounded bg-surface/70 border border-border">Log</span>
+                <span className="px-2 py-0.5 rounded bg-surface/70 border border-border">Peak</span>
+              </div>
             </div>
           )}
           <div className="mt-2 flex items-center gap-2">
@@ -1381,7 +1991,7 @@ export default function App() {
         <div className="mx-auto max-w-screen-2xl px-4 h-20 flex items-center gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-14 h-14 bg-surface-muted rounded overflow-hidden flex items-center justify-center">
-              {currentTrack ? (<img alt={currentTrack.title} src={currentTrack.thumbnail || 'https://via.placeholder.com/56'} className="w-full h-full object-cover" />) : (<span className="text-xs text-muted-foreground">♫</span>)}
+              {currentTrack ? (<img alt={currentTrack.title} src={currentTrack.thumbnail || '/assets/icons/celes-star.png'} className="w-full h-full object-cover" />) : (<span className="text-xs text-muted-foreground">♫</span>)}
             </div>
             <div className="min-w-0">
               <div className="text-sm font-medium truncate max-w-[220px]">{currentTrack?.title || 'Nothing playing'}</div>
@@ -1404,7 +2014,7 @@ export default function App() {
               <span className="text-[11px] text-muted-foreground w-10">{fmtTime(duration)}</span>
             </div>
           </div>
-          <div className="hidden md:flex items-center gap-2 w-48 justify-end">
+            <div className="hidden md:flex items-center gap-2 w-64 justify-end">
             <button className="p-2 rounded hover:bg-surface-muted" onClick={() => setVolume(v => v > 0 ? 0 : 0.8)} aria-label="Mute">{volume > 0 ? <Volume2 size={18}/> : <VolumeX size={18}/>} </button>
             <input type="range" min={0} max={1} step={0.01} value={volume} onChange={(e) => setVolume(Number(e.target.value))} className="w-32 accent-primary" />
             {showMiniLyric && miniLyric && <div className="text-[11px] text-muted-foreground truncate max-w-[220px]">{miniLyric}</div>}
@@ -1414,7 +2024,7 @@ export default function App() {
         </div>
       </div>
       {lyricsOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center" onClick={()=>setLyricsOpen(false)}>
+        <div className="fixed inset-0 z-50 bg-background/60 flex items-center justify-center" onClick={()=>setLyricsOpen(false)}>
           <div className="w-[640px] max-h-[70vh] overflow-auto bg-surface border border-border rounded p-4" onClick={(e)=>e.stopPropagation()}>
             <div className="text-sm font-semibold mb-2">Lyrics</div>
             {!lyricsData && <div className="text-xs text-muted-foreground">Loading…</div>}
@@ -1435,10 +2045,10 @@ export default function App() {
         </div>
       )}
       {theaterOn && (
-        <div className="fixed inset-0 z-50 bg-black">
+        <div className="fixed inset-0 z-50 bg-background">
           {!videoOn && <canvas id="vis" className="absolute inset-0 opacity-40" />}
           {videoOn && (
-            <video ref={videoRef} src={videoUrl||''} className="absolute inset-0 w-full h-full object-contain bg-black" controls={false} muted playsInline autoPlay onCanPlay={()=>{ try { videoRef.current?.play?.() } catch {} }} />
+            <video ref={videoRef} src={videoUrl||''} className="absolute inset-0 w-full h-full object-contain bg-background" controls={false} muted playsInline autoPlay onCanPlay={()=>{ try { videoRef.current?.play?.() } catch {} }} />
           )}
           <div className="relative h-full w-full flex flex-col items-center justify-center gap-6" onClick={(e)=>e.stopPropagation()}>
             <div className="absolute top-4 right-4 flex gap-2">
@@ -1468,12 +2078,12 @@ export default function App() {
                 } catch {}
               }}>{videoOn? 'Hide Video' : 'Show Video'}</Button>
             </div>
-            {!videoOn && <img src={currentTrack?.thumbnail || 'https://via.placeholder.com/512'} className="w-[36vmin] h-[36vmin] rounded shadow-lg object-cover" alt="art" />}
-            <div className="text-3xl font-bold text-white max-w-[80vw] text-center truncate">{currentTrack?.title||'Nothing playing'}</div>
+            {!videoOn && <img src={currentTrack?.thumbnail || '/assets/icons/celes-star.png'} className="w-[36vmin] h-[36vmin] rounded shadow-lg object-cover" alt="art" />}
+            <div className="text-3xl font-bold text-foreground max-w-[80vw] text-center truncate">{currentTrack?.title||'Nothing playing'}</div>
             <div className="text-lg text-foreground/80 truncate max-w-[70vw]">{currentTrack?.artist||''}</div>
             <div className="flex items-center gap-6">
-              <button className="px-5 py-3 rounded bg-white/10 hover:bg-white/20 text-white" onClick={togglePlayPause}>{isPlaying? 'Pause':'Play'}</button>
-              <button className="px-5 py-3 rounded bg-white/10 hover:bg-white/20 text-white" onClick={()=>nextFromQueue()}>Next</button>
+              <button className="px-5 py-3 rounded bg-surface hover:bg-surface-muted border border-border text-foreground" onClick={togglePlayPause}>{isPlaying? 'Pause':'Play'}</button>
+              <button className="px-5 py-3 rounded bg-surface hover:bg-surface-muted border border-border text-foreground" onClick={()=>nextFromQueue()}>Next</button>
             </div>
           </div>
         </div>

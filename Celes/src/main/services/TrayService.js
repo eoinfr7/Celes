@@ -48,16 +48,10 @@ class TrayService {
     ]);
 
     this.tray.setContextMenu(contextMenu);
-    this.tray.setToolTip('Music Player');
+    this.tray.setToolTip('Celes');
     
     // Double-click to show/hide window
-    this.tray.on('double-click', () => {
-      if (this.mainWindow.isVisible()) {
-        this.hideWindow();
-      } else {
-        this.showWindow();
-      }
-    });
+    this.tray.on('double-click', () => { this.showWindow(); });
   }
 
   updateMinimizeToTrayEnabled(enabled) {

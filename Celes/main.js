@@ -62,8 +62,12 @@ protocol.registerSchemesAsPrivileged([
   }
 ]);
 
-// Setup logging as early as possible
-app.whenReady().then(setupLogging);
+// Setup logging as early as possible and disable pinch-zoom globally
+app.commandLine.appendSwitch('disable-pinch');
+// (Optional) disable smooth scrolling acceleration that can trigger zoom-like behavior
+app.whenReady().then(() => {
+  try { setupLogging(); } catch {}
+});
 
 // Handle uncaught exceptions in production
 process.on('uncaughtException', (error) => {

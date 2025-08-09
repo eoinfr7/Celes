@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "@pixi/filter-glow": "^5.2.1",
+    "@pixi/filter-kawase-blur": "^5.1.1",
+    "@pixi/filter-noise": "^5.3.12",
+    "pixi.js": "^7.4.3"
+  }
+}

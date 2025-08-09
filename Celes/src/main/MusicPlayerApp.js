@@ -12,6 +12,7 @@ class MusicPlayerApp {
   constructor() {
     this.windowManager = new WindowManager();
     this.settingsManager = new SettingsManager();
+    this.isQuitting = false;
     this.database = null;
     this.folderWatcher = null;
     this.trayService = null;
@@ -23,6 +24,7 @@ class MusicPlayerApp {
 
   async init() {
     await app.whenReady();
+    try { if (process.platform === 'darwin') app.dock.show(); } catch {}
     
     this.mainWindow = this.windowManager.createWindow();
     this.setupDatabase();
@@ -164,40 +166,56 @@ class MusicPlayerApp {
   }
 
   setupWindowEvents() {
-    // Handle window close event for tray functionality
+    // Intercept close: hide main to keep app persistent (no mini window)
     this.mainWindow.on('close', (event) => {
-      const shouldClose = this.trayService.handleWindowClose(event);
-      if (!shouldClose) {
-        // Window was minimized to tray, don't quit the app
-        return;
+      if (this.isQuitting) {
+        return; // allow default close on real quit
       }
+      event.preventDefault();
+      // Hide immediately without reloading to avoid black screen flashes
+      try { this.mainWindow.hide(); } catch {}
+      try { this.mainWindow.setOpacity?.(0); } catch {}
+      try { if (process.platform === 'darwin') app.dock.show(); } catch {}
     });
 
     // Handle minimize event
     this.mainWindow.on('minimize', (event) => {
-      // If minimize to tray is enabled, hide to tray instead
+      // If minimize to tray is enabled, hide to tray instead; always open mini
       if (this.trayService.isMinimizeToTrayEnabled) {
         event.preventDefault();
         this.trayService.hideWindow();
       }
     });
+
+    // When the main window is shown again, ensure any mini (if existed) is closed
+    this.mainWindow.on('show', () => {
+      try { this.windowManager.closeMiniWindow?.(); } catch {}
+    });
   }
 
   setupAppEvents() {
+    // Keep app alive when all windows are closed (persistent background with Dock/Taskbar presence)
     app.on('window-all-closed', () => {
-      if (process.platform !== 'darwin') {
-        this.cleanup();
-        app.quit();
-      }
+      // Do not quit on any platform; keep process running
+      try { if (process.platform === 'darwin') app.dock.show(); } catch {}
     });
 
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
-        this.mainWindow = this.windowManager.createWindow();
-      }
+      try {
+        if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+          // Restore opacity and show cleanly
+          try { this.mainWindow.setOpacity?.(1); } catch {}
+          this.mainWindow.show();
+          try { this.windowManager.closeMiniWindow?.(); } catch {}
+        } else if (BrowserWindow.getAllWindows().length === 0) {
+          this.mainWindow = this.windowManager.createWindow();
+        }
+      } catch {}
     });
 
     app.on('before-quit', () => {
+      this.isQuitting = true;
+      try { this.windowManager.closeMiniWindow?.(); } catch {}
       this.cleanup();
     });
   }

@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
 // Add error handling for preload script
 process.on('uncaughtException', (error) => {
@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deletePlaylist: (playlistId) => ipcRenderer.invoke('delete-playlist', playlistId),
   renamePlaylist: (playlistId, newName) => ipcRenderer.invoke('rename-playlist', playlistId, newName),
   updatePlaylistCover: (playlistId, imageDataUrl) => ipcRenderer.invoke('update-playlist-cover', playlistId, imageDataUrl),
+  updatePlaylistColor: (playlistId, color) => ipcRenderer.invoke('update-playlist-color', playlistId, color),
   
   // Album art
   getAlbumArt: (songId) => ipcRenderer.invoke('get-album-art', songId),
@@ -41,13 +42,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Tray operations
   updateMinimizeToTray: (enabled) => ipcRenderer.invoke('update-minimize-to-tray', enabled),
+  // Lock page zoom to avoid accidental pinch-zoom performance hits
+  lockZoom: () => { try { webFrame.setVisualZoomLevelLimits(1,1); webFrame.setLayoutZoomLevelLimits(0,0) } catch {} },
   
   // Window operations
   windowMinimize: () => ipcRenderer.invoke('window-minimize'),
   windowMaximize: () => ipcRenderer.invoke('window-maximize'),
   windowClose: () => ipcRenderer.invoke('window-close'),
   windowIsMaximized: () => ipcRenderer.invoke('window-is-maximized'),
+  showMainWindow: () => ipcRenderer.invoke('show-main-window'),
   // mini window removed; use in-app dock instead
+  openMiniWindow: () => ipcRenderer.invoke('open-mini-window'),
+  closeMiniWindow: () => ipcRenderer.invoke('close-mini-window'),
   
   // Custom overlay notifications
   showOverlayNotification: (songData) => ipcRenderer.invoke('show-overlay-notification', songData),
@@ -135,6 +141,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   clearStreamingCache: () => ipcRenderer.invoke('clear-streaming-cache'),
   streamingHealthCheck: () => ipcRenderer.invoke('streaming-health-check'),
   getStreamingStats: () => ipcRenderer.invoke('get-streaming-stats'),
+  probeStreamLatency: (trackId, platform) => ipcRenderer.invoke('probe-stream-latency', trackId, platform),
   // Settings
   getSettings: () => ipcRenderer.invoke('get-settings'),
   saveSettings: (settings) => ipcRenderer.invoke('save-settings', settings),

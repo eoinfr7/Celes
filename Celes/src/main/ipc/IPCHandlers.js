@@ -86,11 +86,11 @@ class IPCHandlers {
     });
 
     ipcMain.handle('get-playlists', async () => {
-      return this.database.getPlaylists();
+      try { return await this.database.getPlaylists(); } catch { return [] }
     });
 
     ipcMain.handle('create-playlist', async (event, name) => {
-      return this.database.createPlaylist(name);
+      try { return await this.database.createPlaylist(name); } catch (e) { return { success:false, error: e.message } }
     });
 
     ipcMain.handle('add-song-to-playlist', async (event, playlistId, songId) => {
@@ -145,6 +145,10 @@ class IPCHandlers {
         console.error('Error updating playlist cover:', error);
         return { success: false, error: error.message };
       }
+    });
+
+    ipcMain.handle('update-playlist-color', async (event, playlistId, color) => {
+      try { return this.database.updatePlaylistColor(playlistId, color) } catch (e) { return { success:false, error:e.message } }
     });
 
     // Artist following handlers
@@ -240,8 +244,28 @@ class IPCHandlers {
       return this.mainWindow.isMaximized();
     });
 
-    // Mini player
-    // mini window removed; using in-app dock
+    // Show/restore main window (used by mini window "Expand")
+    ipcMain.handle('show-main-window', async () => {
+      try {
+        if (this.mainWindow?.isDestroyed?.()) {
+          return { success: false, error: 'Main window destroyed' };
+        }
+        this.mainWindow.show();
+        this.mainWindow.focus();
+        try { this.windowManager?.closeMiniWindow?.(); } catch {}
+        return { success: true };
+      } catch (e) {
+        return { success: false, error: e.message };
+      }
+    });
+
+    // Mini window controls (native persistent dock)
+    ipcMain.handle('open-mini-window', async () => {
+      try { await this.windowManager?.createMiniWindow?.(); return { success:true } } catch (e) { return { success:false, error:e.message } }
+    });
+    ipcMain.handle('close-mini-window', async () => {
+      try { await this.windowManager?.closeMiniWindow?.(); return { success:true } } catch (e) { return { success:false, error:e.message } }
+    });
 
     // Bridge generic commands from mini → main renderer
     ipcMain.handle('renderer-command', async (_event, cmd, args) => {
@@ -309,6 +333,19 @@ class IPCHandlers {
         return { success: false, error: error.message };
       }
     });
+
+    // Forward now-playing state from the main renderer to the mini window
+    try {
+      const { ipcMain: _ipcMain } = require('electron');
+      _ipcMain.on('report-now-playing', (_event, data) => {
+        try {
+          const win = this.windowManager?.getMiniWindow?.();
+          if (win && !win.isDestroyed()) {
+            win.webContents.send('mini-now-playing', data || null);
+          }
+        } catch {}
+      });
+    } catch {}
 
     // Track recently played songs
     ipcMain.handle('track-song-play', async (event, songId) => {
@@ -713,6 +750,18 @@ class IPCHandlers {
 
     ipcMain.handle('get-streaming-stats', async () => {
       return this.streamingService.getStats();
+    });
+
+    // Quick latency probe: resolve a stream URL and report elapsed ms
+    ipcMain.handle('probe-stream-latency', async (_event, trackId, platform) => {
+      try {
+        const start = Date.now();
+        const res = await this.streamingService.getStreamUrlWithFallback(trackId, platform || 'youtube');
+        const ms = Date.now() - start;
+        return { success: !!res?.streamUrl, ms };
+      } catch (e) {
+        return { success: false, error: e.message };
+      }
     });
 
     // Fallback settings

@@ -206,6 +206,7 @@ class MusicDatabase {
         }
         const hasCover = rows.some(c => c.name === 'cover_image');
         const hasCoverFmt = rows.some(c => c.name === 'cover_image_format');
+        const hasCoverColor = rows.some(c => c.name === 'cover_color');
         if (!hasCover) {
           console.log('Adding cover_image column to playlists table...');
           this.db.run('ALTER TABLE playlists ADD COLUMN cover_image BLOB');
@@ -213,6 +214,10 @@ class MusicDatabase {
         if (!hasCoverFmt) {
           console.log('Adding cover_image_format column to playlists table...');
           this.db.run('ALTER TABLE playlists ADD COLUMN cover_image_format TEXT');
+        }
+        if (!hasCoverColor) {
+          console.log('Adding cover_color column to playlists table...');
+          this.db.run('ALTER TABLE playlists ADD COLUMN cover_color TEXT');
         }
       });
 
@@ -433,42 +438,69 @@ class MusicDatabase {
   }
 
   getPlaylists() {
-    const playlists = this.db.prepare('SELECT * FROM playlists ORDER BY name').all();
-    
-    return playlists.map(playlist => {
-      if (!playlist || !playlist.id) {
-        console.warn('Invalid playlist found:', playlist);
-        return {
-          ...playlist,
-          songs: []
-        };
-      }
-      return {
-        ...playlist,
-        songs: this.getPlaylistSongs(playlist.id)
-      };
+    return new Promise((resolve) => {
+      try {
+        this.db.all('SELECT * FROM playlists ORDER BY name', [], (err, rows) => {
+          if (err) { console.error('Error loading playlists:', err); resolve([]); return; }
+          const list = Array.isArray(rows) ? rows : [];
+          if (list.length === 0) { resolve([]); return; }
+          let pending = list.length;
+          const out = new Array(list.length);
+          list.forEach((pl, idx) => {
+            if (!pl || !pl.id) {
+              console.warn('Invalid playlist found:', pl);
+              out[idx] = { ...pl, songs: [] };
+              if (--pending === 0) resolve(out);
+              return;
+            }
+            this.db.all(
+              `SELECT s.*, ps.position FROM songs s
+               JOIN playlist_songs ps ON s.id = ps.song_id
+               WHERE ps.playlist_id = ?
+               ORDER BY ps.position`,
+              [pl.id],
+              (e2, songs) => {
+                out[idx] = { ...pl, songs: Array.isArray(songs) ? songs : [] };
+                if (--pending === 0) resolve(out);
+              }
+            );
+          });
+        });
+      } catch (e) { console.error('getPlaylists error:', e); resolve([]); }
     });
   }
 
   getPlaylistSongs(playlistId) {
-    return this.db.prepare(`
-      SELECT s.*, ps.position 
-      FROM songs s
-      JOIN playlist_songs ps ON s.id = ps.song_id
-      WHERE ps.playlist_id = ?
-      ORDER BY ps.position
-    `).all(playlistId);
+    return new Promise((resolve) => {
+      try {
+        this.db.all(
+          `SELECT s.*, ps.position FROM songs s
+           JOIN playlist_songs ps ON s.id = ps.song_id
+           WHERE ps.playlist_id = ?
+           ORDER BY ps.position`,
+          [playlistId],
+          (err, rows) => { if (err) resolve([]); else resolve(rows || []); }
+        );
+      } catch { resolve([]) }
+    });
   }
 
   getPlaylistById(playlistId) {
-    try {
-      const playlist = this.db.prepare('SELECT * FROM playlists WHERE id = ?').get(playlistId);
-      if (!playlist) return null;
-      return { ...playlist, songs: this.getPlaylistSongs(playlistId) };
-    } catch (error) {
-      console.error('Error getting playlist by id:', error);
-      return null;
-    }
+    return new Promise((resolve) => {
+      try {
+        this.db.get('SELECT * FROM playlists WHERE id = ?', [playlistId], (err, playlist) => {
+          if (err || !playlist) { resolve(null); return; }
+          this.db.all(
+            `SELECT s.*, ps.position FROM songs s
+             JOIN playlist_songs ps ON s.id = ps.song_id
+             WHERE ps.playlist_id = ?
+             ORDER BY ps.position`,
+            [playlistId],
+            (_e2, songs) => resolve({ ...playlist, songs: Array.isArray(songs) ? songs : [] })
+          );
+        });
+      } catch (e) { console.error('Error getting playlist by id:', e); resolve(null); }
+    });
   }
 
   getSongByStream(platform, streamId) {
@@ -552,12 +584,14 @@ class MusicDatabase {
   }
 
   createPlaylist(name, type = 'user') {
-    try {
-      const result = this.db.prepare('INSERT INTO playlists (name, type) VALUES (?, ?)').run(name, type);
-      return { success: true, playlistId: result.lastInsertRowid };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
+    return new Promise((resolve) => {
+      try {
+        this.db.run('INSERT INTO playlists (name, type) VALUES (?, ?)', [name, type], function(err) {
+          if (err) { resolve({ success:false, error: err.message }); return; }
+          resolve({ success:true, playlistId: this.lastID });
+        });
+      } catch (e) { resolve({ success:false, error: e.message }); }
+    });
   }
 
   addSongToPlaylist(playlistId, songId) {
@@ -760,6 +794,16 @@ class MusicDatabase {
       return { success: true };
     } catch (error) {
       console.error('Error updating playlist cover:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  updatePlaylistColor(playlistId, color) {
+    try {
+      this.db.prepare('UPDATE playlists SET cover_color = ? WHERE id = ?').run(color || null, playlistId);
+      return { success: true };
+    } catch (error) {
+      console.error('Error updating playlist color:', error);
       return { success: false, error: error.message };
     }
   }

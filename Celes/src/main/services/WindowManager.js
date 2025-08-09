@@ -18,7 +18,8 @@ class WindowManager {
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
-        preload: path.join(__dirname, '..', '..', '..', 'preload.js')
+        preload: path.join(__dirname, '..', '..', '..', 'preload.js'),
+        zoomFactor: 1.0
       },
       frame: false,
       titleBarStyle: 'hidden',
@@ -36,6 +37,12 @@ class WindowManager {
     
     this.mainWindow.once('ready-to-show', () => {
       this.mainWindow.show();
+      try {
+        // Enforce zoom level at 0 for visual/layout and disable pinch zoom at the WebContents level
+        this.mainWindow.webContents.setZoomFactor(1)
+        this.mainWindow.webContents.setVisualZoomLevelLimits(1,1)
+        this.mainWindow.webContents.setZoomLevel(0)
+      } catch {}
     });
 
     // Open dev tools in development or for debugging production issues
@@ -97,7 +104,21 @@ class WindowManager {
     return this.mainWindow;
   }
 
-  // Mini window removed; using in-app dock instead
+  getMiniWindow() {
+    return this.miniWindow;
+  }
+
+  async createMiniWindow() {
+    // Mini window disabled (using OS Now Playing only)
+    return null;
+  }
+
+  closeMiniWindow() {
+    if (this.miniWindow && !this.miniWindow.isDestroyed()) {
+      this.miniWindow.close();
+      this.miniWindow = null;
+    }
+  }
 
   closeWindow() {
     if (this.mainWindow) {
